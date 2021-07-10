@@ -1,5 +1,5 @@
 /*
- * Trinity Core and update by MoPCore Forums
+ * Copyright 2021 ShadowCore
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -13,2407 +13,2385 @@
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
- *
- * Raid: Siege of Orgrimmar.
- * Boss: The Fallen Protectors.
- *
- * Wowpedia boss history:
- *
- * "The Golden Lotus and Shado-Pan guardians of the Vale of Eternal Blossoms were caught in the epicenter of the devastating blast that scarred the Vale, and torn apart by the dark energies.
- *  Their spirits linger in the place they once protected, confused and tormented by their failure."
  */
 
-#include "ObjectMgr.h"
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-#include "SpellScript.h"
+#include "siege_of_orgrimmar.hpp"
 #include "SpellAuraEffects.h"
-#include "SpellAuras.h"
-#include "MapManager.h"
-#include "Spell.h"
-#include "Vehicle.h"
-#include "Cell.h"
-#include "CellImpl.h"
-#include "GridNotifiers.h"
-#include "GridNotifiersImpl.h"
-#include "CreatureTextMgr.h"
-#include "Unit.h"
-#include "Player.h"
-#include "Creature.h"
-#include "InstanceScript.h"
-#include "Map.h"
-#include "VehicleDefines.h"
-#include "SpellInfo.h"
+#include "SpellMgr.h"
 
-#include "siege_of_orgrimmar.h"
-
-enum Yells
+enum ScriptedTextRookStonetoe
 {
-    /*** Bosses ***/
+    SAY_ROOK_AGGRO       = 0,
+    SAY_ROOK_DEATH       = 1,
+    SAY_ROOK_INTRO_1     = 2,
+    SAY_ROOK_INTRO_2     = 3,
+    SAY_ROOK_INTRO_3     = 4,
+    SAY_ROOK_KILL        = 5,
+    SAY_ROOK_KICK        = 6,
+    SAY_ROOK_MEASURES    = 7,
+    SAY_ROOK_LOTUS       = 8,
+};
 
-    // Lorewalker Cho Intro / Outro.
+enum ScriptedTextHeSoftfoot
+{
+    SAY_HE_AGGRO       = 0,
+    SAY_HE_MEASURES    = 1,
+    SAY_HE_LOTUS       = 2,
+};
 
-    LOREWALKER_SAY_INTRO_1         = 0, // Can it be...? Oh no, no no no no no.
-    LOREWALKER_SAY_INTRO_2,             // The Golden Lotus... they pledged their lives to defend this place.                                                    -- After this : ROOK_SAY_INTRO_1.
-    LOREWALKER_SAY_INTRO_3,             // Yes! Rook Stonetoe! You remember me! What has happened to you?                                                        -- After this : ROOK_SAY_INTRO_2 and SUN_SAY_INTRO_1.
-    LOREWALKER_SAY_INTRO_4,             // I see. This sha energy has trapped their spirits here, to endlessly relive their failure. It feeds on their despair.  -- After this : ROOK_SAY_INTRO_3.
-    LOREWALKER_SAY_INTRO_5,             // This is a fate far worse than death - please, heroes! Set their souls free!                                           -- After this : Intro Done!
-
-    LOREWALKER_SAY_OUTRO_1,             // Be at peace, dear friends.
-    LOREWALKER_SAY_OUTRO_2,             // May your souls become one with the land you gave your life to protect..
-
-    // Rook Stonetoe
-
-    ROOK_SAY_INTRO_1               = 0, // You... Rook knows you...
-    ROOK_SAY_INTRO_2,                   // Rook... does not know... Head... is cloudy...
-    ROOK_SAY_INTRO_3,                   // Please... help...
-
-    ROOK_SAY_AGGRO,                     // Sun... He... aid me.
-    ROOK_SAY_CORRUPTION_KICK,           // 0 - Brawl... with Rook. ; 1 - Rook fight!
-    ROOK_SAY_DESPERATE_MEASURES,        // Rook... needs help!
-    ROOK_SAY_KILL,                      // You... are not my friend.
-    ROOK_SAY_BOND_LOTUS,                // Rook... not safe...
-    ROOK_SAY_EVENT_COMPLETE,            // Feeling... better now... Thank you... little friend.
-
-    ROOK_ANNOUNCE_MEASURES,             // Rook Stonetoe calls upon [Misery, Sorrow and Gloom]!
-    ROOK_ANNOUNCE_BOND_LOTUS,           // Rook Stonetoe begins to cast [Bond of the Golden Lotus]!
-
-    // He Softfoot
-
-    HE_SAY_AGGRO                   = 0, // He Softfoot nods to his foes.
-    HE_SAY_DESPERATE_MEASURES,          // He Softfoot signals for help.
-    HE_SAY_BOND_LOTUS,                  // He Softfoot enters a meditative pose to heal his wounds.
-
-    HE_ANNOUNCE_GOUGE,                  // He Softfoot attempts to [Gouge] you, turn away!
-    HE_ANNOUNCE_MARK_OF_ANGUISH,        // He Softfoot creates a [Mark of Anguish]!
-    HE_ANNOUNCE_NOXIOUS_POISON,         // He Softfoot coats his daggers with [Noxious Poison]!
-    HE_ANNOUNCE_INSTANT_POISON,         // He Softfoot coats his daggers with [Instant Poison]!
-    HE_ANNOUNCE_BOND_LOTUS,             // He Softfoot begins to cast [Bond of the Golden Lotus]!
-
-    // Sun Tenderheart
-
-    SUN_SAY_INTRO_1                = 0, // We know only despair now. A fitting punishment for our failure...
-
-    SUN_SAY_AGGRO,                      // Will you succeed where we have failed?
-    SUN_SAY_CALAMITY,                   // 0 - We must redeem the Vale! ; 1 - You will suffer from our failure.
-    SUN_SAY_DESPERATE_MEASURES,         // Protectors, come to my aid!
-    SUN_SAY_KILL,                       // You too have failed.
-    SUN_SAY_WIPE,                       // We will never find solace.
-    SUN_SAY_BOND_LOTUS,                 // We have not fulfilled our oath!
-    SUN_SAY_EVENT_COMPLETE,             // We return to when we lost our way. You... are very kind.
-
-    SUN_ANNOUNCE_CALAMITY,              // Sun Tenderheart begins to cast [Calamity]!
-    SUN_ANNOUNCE_BOND_LOTUS             // Sun Tenderheart begins to cast [Bond of the Golden Lotus]!
+enum ScriptedTextSunTenderHeart
+{
+    SAY_SUN_AGGRO       = 0,
+    SAY_SUN_DEATH       = 1,
+    SAY_SUN_INTRO_1     = 2,
+    SAY_SUN_KILL        = 3,
+    SAY_SUN_RESET       = 4,
+    SAY_SUN_CALAMITY    = 5,
+    SAY_SUN_MEASURES    = 6,
+    SAY_SUN_LOTUS       = 7,
 };
 
 enum Spells
 {
-    /*** Bosses ***/
-
-    // General
-
-    /*
-        Bond of the Golden Lotus
-        Rook Stonetoe, He Softfoot, and Sun Tenderheart share a spiritual bond, linking their fates to each other. 
-        Upon reaching 1 health, each of them will begin to cast [Bond of the Golden Lotus] if any of the other Protectors are still in combat, restoring 20% of maximum health upon completion.
-        Bringing all three Protectors to 1 health simultaneously will restore clarity to their clouded minds. 
-    */
-    SPELL_BOND_OF_THE_GOLDEN_LOTUS = 143497,
-
-    SPELL_ROOT_GENERIC             = 42716,
-    SPELL_PROTECTORS_VISUAL        = 144942, // Not used - Black & White Dummy.
-    SPELL_BERSERK                  = 144369,
-
-    //============================================================================================================================================================================//
+    SPELL_ZERO_POWER                    = 96301,
+    SPELL_BOND_OF_THE_GOLDEN_LOTUS      = 143497,
+    SPELL_BERSERK                       = 26662,
 
     // Rook Stonetoe
+    SPELL_VENGEFUL_STRIKES              = 144396,
+    SPELL_VENGEFUL_STRIKES_DMG          = 144397,
 
-    /*
-        Vengeful Strikes
-        Rook Stonetoe enters an offensive stance, stunning his target and inflicting 180000 physical damage in a frontal cone twice per second for 3 sec.
-    */
-    SPELL_VENGEFUL_STRIKES         = 144396, // Stun, Damage, trigger 144397 each 0.5s.
+    SPELL_CORRUPTED_BREW_AOE            = 143019,
+    SPELL_CORRUPTED_BREW_MISSILE_1      = 143021,
+    SPELL_CORRUPTED_BREW_MISSILE_2      = 145608,
+    SPELL_CORRUPTED_BREW_MISSILE_3      = 145609,
+    SPELL_CORRUPTED_BREW_MISSILE_4      = 145610,
+    SPELL_CORRUPTED_BREW_MISSILE_5      = 145611,
+    SPELL_CORRUPTED_BREW_MISSILE_6      = 145612,
+    SPELL_CORRUPTED_BREW_MISSILE_7      = 145615,
+    SPELL_CORRUPTED_BREW_MISSILE_8      = 145617,
+    SPELL_CORRUPTED_BREW_DMG            = 143023,
+    SPELL_CORRUPTED_BREW_DUMMY          = 145605, // ?
 
-    /*
-        Corrupted brew
-        Rook Stonetoe hurls a keg of Corrupted Brew at a distant target, inflicting 118750 to 131250 Shadow damage to enemies within 5 yards and slowing targets hit by 50% for 15 sec.
-    */
-    SPELL_CORRUPTED_BREW           = 143019, // Dummy on efect 0 to cast SPELL_CORRUPTED_BREW_MISSILE (1, 3, 2, 6 targets).
-    SPELL_CORRUPTED_BREW_MISSILE   = 143021, // Triggers SPELL_CORRUPTED_BREW_DAMAGE.
-    SPELL_CORRUPTED_BREW_DAMAGE    = 143023, // Damage and movement speed reduce in 5 yards.
+    SPELL_CLASH_AOE                     = 143027,
+    SPELL_CLASH_JUMP                    = 143028, // creature
+    SPELL_CLASH_CHARGE                  = 143030, // player
 
-    /*
-        Clash
-        Rook Stonetoe clashes against an enemy, charging each other and meeting halfway. Rook Stonetoe then immediately begins to perform Corruption Kick.
-        In Heroic Difficulty, Rook Stonetoe's Clash will be cast during Desperate Measures phase too.
-    */
-    SPELL_CLASH                    = 143027, // Dummy on Effect 0 to cast SPELL_CLASH_ROOK + SPELL_CLASH_TARGET.
-    SPELL_CLASH_ROOK               = 143030, // Boss charge - to - player.
-    SPELL_CLASH_TARGET             = 143028, // Player charge - to - boss.
+    SPELL_CORRUPTION_KICK               = 143007,
+    SPELL_CORRUPTION_DMG                = 143009,
+    SPELL_CORRUPTION_PERIODIC           = 143010,
 
-    /*
-        Corruption Kick
-        Spins rapidly in a circle, rooting himself and inflicting 117000 to 123000 Physical damage to targets within 10 yards every second for 4 sec. 
-        Additionally torments targets struck, inflicting 75000 Shadow damage every two seconds for 6 sec. 
-    */
-    SPELL_CORRUPTION_KICK          = 143007, // Immediately after Clash. Triggers damage and aura apply.
+    SPELL_MISERY_SORROW_AND_GLOOM       = 143955,
+    SPELL_MISERY_SORROW_AND_GLOOM_JUMP_1    = 143946,
+    SPELL_MISERY_SORROW_AND_GLOOM_JUMP_2    = 143948,
+    SPELL_MISERY_SORROW_AND_GLOOM_JUMP_3    = 143949,
 
-    /*
-        Desperate Measures
-        Upon reaching 66% or 33% health remaining, Rook Stonetoe manifests evil forms of his closest friends, making Embodied Misery, Embodied Sorrow, and Embodied Gloom.
-        Once all three spirits are defeated, Rook Stonetoe resumes fighting players.
-    */
+    SPELL_SHARED_TORMENT                = 145655,
 
-    SPELL_MISSERY_SORROW_GLOOM     = 143955, // Dummy aura, "Meditating" tooltip.
+    SPELL_DEFILED_GROUND                = 143961,
+    SPELL_DEFILED_GROUND_AREATRIGGER    = 143960,
+    SPELL_DEFILED_GROUND_AURA           = 143959,
 
-    //============================================================================================================================================================================//
+    SPELL_INFERNO_STRIKE                = 143962,
+    SPELL_RESIDUAL_BURN                 = 144007,
 
-    // He Softfoot
+    SPELL_CORRUPTION_SHOCK_AOE          = 143958,
+    SPELL_CORRUPTION_SHOCK_DMG          = 144018,
 
-    /*
-        Garrote
-        Traveling through the shadows, He Softfoot Garrotes targets, inflicting 80000 Physical damage every 2 sec.
-        This effect is removed when He Softfoot begins his Desperate Measures. 
-    */
-    SPELL_SHADOWSTEP               = 143048, // Triggers SPELL_HE_GARROTE and Teleport 2y behind target.
-    SPELL_HE_GARROTE               = 143198, // Damage every 2 seconds.
+    // He StoneFoot
+    SPELL_SHADOWSTEP_DUMMY              = 143262,
+    SPELL_SHADOWSTEP                    = 143048,
+    SPELL_SHADOWSTEP_BACK               = 143267,
+    SPELL_GARROTE                       = 143198,
 
-    /*
-        Gouge
-        He Softfoot attempts to gouge the eyes of his target, incapacitating them for 6 sec and fixating on a random target until Taunted.
-        If the target is facing away, Gouge will instead knock them away a short distance. 
-    */
-    SPELL_HE_GOUGE                 = 143330, // Dummy of Effect 0. Checks for SPELL_HE_GOUGE_DMG_STUN / SPELL_HE_GOUGE_KB.
-    SPELL_HE_GOUGE_DMG_STUN        = 143301, // Damage and 6 seconds stun.
-    SPELL_HE_GOUGE_KB              = 143331, // Knockback.
+    SPELL_GOUGE                         = 143330,
+    SPELL_GOUGE_DMG                     = 143301,
+    SPELL_GOUGE_KNOCKBACK               = 143331,
 
-    /*
-        Master Poisoner
-        He Softfoot is a Master Poisoner and occasionally coats his weapons with various types of poisons.
-        In Heroic Difficulty, Master Poisoner abilities also take effect when using Garrote.
-        In Normal Difficulty, He Softfoot's Master Poisoner abilities will not be cast during any Desperate Measures phase.
-    */
+    SPELL_NOXIOUS_POISON                = 143225,
+    SPELL_NOXIOUS_POISON_AREATRIGGER    = 143235,
+    SPELL_NOXIOUS_POISON_MISSILE_1      = 143245,
+    SPELL_NOXIOUS_POISON_MISSILE_2      = 143276,
+    SPELL_NOXIOUS_POISON_AURA           = 143239, // dmg
+    SPELL_NOXIOUS_POISON_DMG            = 144367,
 
-    /*
-        Instant Poison
-        He Softfoot coats his weapon in an Instant Poison, causing successful melee attacks to inflict 73125 to 76875 additional Nature damage. 
-    */
-    SPELL_INSTANT_POISON           = 143210, // Applies Proc aura on melee atack for Instant Poison damage (Effect 1) and Script Effect for removal for SPELL_NOXIOUS_POISON on Effect 2.
+    SPELL_INSTANT_POISON                = 143210,
+    SPELL_INSTANT_POISON_DMG            = 143224,
 
-    /*
-        Noxious Poison
-        He Softfoot coats his weapon in a Noxious Poison, causing successful melee attacks to create pools of poison on the ground, inflicting 85000 Nature damage every second. These pools may be jumped over.
-        This effect is removed when He Softfoot begins his Desperate Measures. 
-    */
-    SPELL_NOXIOUS_POISON           = 143225, // Applies Proc aura on melee atack for SPELL_NOXIOUS_POISON_MISSILE (Effect 1) and Script Effect for removal for SPELL_INSTANT_POISON on Effect 2.
-    SPELL_NOXIOUS_POISON_MISSILE   = 143245, // Triggers SPELL_NOXIOUS_POISON_AT_MISS.
-    SPELL_NOXIOUS_POISON_AT_MISS   = 143276, // Triggers SPELL_NOXIOUS_POISON_AT.
-    SPELL_NOXIOUS_POISON_AT        = 143235, // Creates Areatrigger 1013 (Pool of Noxious Poison).
-    SPELL_NOXIOUS_POISON_AURA      = 143239, // Player periodic damage trigger aura (From Areatrigger).
+    SPELL_MARK_OF_ANGUISH_JUMP          = 143808,
+    SPELL_MARK_OF_ANGUISH_AURA_1        = 143812, // on boss, visual
+    SPELL_MARK_OF_ANGUISH_AOE           = 143822, // targetting, is used to set next target for embodied anguish
+    SPELL_MARK_OF_ANGUISH_AURA_2        = 143840, // on players, main aura (root, override spells)
+    SPELL_MARK_OF_ANGUISH_DUMMY         = 143842, // casted by a player to send the mark to another player
+    SPELL_MARK_OF_ANGUISH_DMG           = 144365, // is triggered by 143840 periodically, it damages the owner
+    SPELL_SHADOW_WEAKNESS               = 144079, // ?
+    SPELL_SHADOW_WEAKNESS_AOE           = 144081, // targetting to apply 144176 on players
+    SPELL_SHADOW_WEAKNESS_DEBUFF        = 144176,
+    SPELL_DEBILITATION                  = 147383,
 
-    /*
-        Desperate Measures
-        Upon reaching 66% or 33% health remaining, He Softfoot manifests a twisted spirit of his brother, creating Embodied Anguish, which fixates upon the raid member who has the Mark of Anguish.
-        Once this spirit is defeated, He Softfoot resumes fighting players.
-    */
+    // Sun TenderHeart
+    SPELL_SHA_SEAR                      = 143423,
+    SPELL_SHA_SEAR_DMG                  = 143424,
 
-    SPELL_MARK_OF_ANGUISH          = 143822, // Dummy on Effect 0 for SPELL_MARK_OF_ANGUISH_MAIN aura apply on random target.
-    SPELL_MARK_OF_ANGUISH_MAIN     = 143840, // Mechanic abilities, Periodic Dummy on Effect 1 for SPELL_MARK_OF_ANGUISH_DAMAGE, Root apply.
-    SPELL_MARK_OF_ANGUISH_DAMAGE   = 144365, // Damage.
-    SPELL_MARK_OF_ANGUISH_TRANSFER = 143842, // Mechanic Abilities button, Dummy on Effect 0 for SPELL_MARK_OF_ANGUISH_MAIN aura apply on selected friendly target.
-    SPELL_MARK_OF_ANGUISH_VISUAL   = 143812, // Kneel boss visual, "Meditating" tooltip.
-    SPELL_DEBILITATION             = 147383, // Possessing the Mark of Anguish debilitates targets, decreasing their armor by 50% for 2 min.
+    SPELL_SHADOW_WORD_BANE              = 143446, ///< Boss cast this
+    SPELL_SHADOW_WORD_BANE_AOE          = 143438, ///< Jump spell
+    SPELL_SHADOW_WORD_BANE_DMG          = 143434, ///< Damage aura
 
-    //============================================================================================================================================================================//
+    SPELL_CALAMITY                      = 143491,
+    SPELL_CALAMITY_DMG                  = 143493,
+    SPELL_CALAMITY_DUMMY                = 143544, // ?
 
-    // Sun Tenderheart
+    SPELL_DARK_MEDITATION_AREATRIGGER   = 143546,
+    SPELL_MEDITATIVE_FIELD              = 143564,
+    SPELL_DARK_MEDITATION_DUMMY_1       = 143649, // ? no visual
+    SPELL_DARK_MEDITATION_JUMP_1        = 143728, // ? for adds ?
+    SPELL_DARK_MEDITATION_JUMP_2        = 143730, // ? for adds ?
+    SPELL_DARK_MEDITATION_PERIODIC      = 143745,
+    SPELL_DARK_MEDITATION_DUMMY_2       = 143843, // for boss
+    SPELL_DARK_MEDITATION_DMG           = 143559,
 
-    /*
-        Sha Sear
-        Causes an explosion of Shadow magic around the target, inflicting increasing Shadow damage every second to all enemies within 5 yards around the target.
-    */
-    SPELL_SHA_SHEAR                = 143423, // Triggers SPELL_SHA_SHEAR_DAMAGE each sec.
-    SPELL_SHA_SHEAR_DAMAGE         = 143424, // Damage.
+    SPELL_MANIFEST_DESPAIR              = 143746,
+    SPELL_MANIFEST_DESPERATION          = 144504,
 
-    /*
-        Shadow Word: Bane
-        Expels a word of misery upon multiple targets, inflicting 100000 Shadow damage every 3 sec for 18 sec. Each time this effect deals damage, it will jump to an additional target, up to a total of 3 times.
-    */
-    SPELL_SHADOW_WORD_BANE         = 143446, // Cast time and Dumy on Effect 0 for targets apply of SPELL_SHADOW_WORD_BANE_HIT (2, 5, 4, 10 targets).
-    SPELL_SHADOW_WORD_BANE_HIT     = 143434, // Dummy for Jump on Effect 0, Periodic Damage aura apply (Effect 1).
-    SPELL_SHADOW_WORD_BANE_JUMP    = 143443, // Jump spell between players on tick. Dummy on Effect 0 to apply SPELL_SHADOW_WORD_BANE_HIT.
+    SPELL_SPIRIT_BOUND                  = 143724,
+};
 
-    /*
-        Calamity
-        Calls forth a great Calamity, striking all players for 30% of their maximum health as Shadow damage. This also removes Shadow Word: Bane from all targets.
-        In Heroic difficulty, Calamity increases in magnitude by an additional 10% of maximum health each additional time it is cast. This effect resets when Sun Tenderheart begins her Desperate Measures.
-        In Normal Difficulty, Sun Tenderheart's Calamity will not be cast during any Desperate Measures phase.
-    */
-    SPELL_CALAMITY                 = 143491, // Cast time and Dummy on Effect 0 for SPELL_CALAMITY_DAMAGE.
-    SPELL_CALAMITY_DAMAGE          = 143493, // Damage health % (Effect 0) and Dummy (Effect 1) for 10% Heroic increase.
+enum Adds
+{
+    NPC_EMBODIED_MISERY         = 71476,
+    NPC_EMBODIED_SORROW         = 71481,
+    NPC_EMBODIED_GLOOM          = 71477,
 
-    /*
-        Desperate Measures
-        Upon reaching 66% or 33% health remaining, Sun Tenderheart manifests an evil form of her protectors, making Embodied Despair and Embodied Desperation.
-        Once both spirits are defeated, Sun Tenderheart resumes fighting players.
-    */
+    NPC_EMBODIED_ANGUISH        = 71478,
 
-    SPELL_DARK_MEDITATION          = 143546, // Creates Areatrigger 1032 (Dark Meditation) Effect 0, Periodic Dummy (Effect 1) for SPELL_DARK_MEDITATION_DAMAGE trigger every 0.5 seconds.
-    SPELL_DARK_MEDITATION_DAMAGE   = 143559, // Damage.
-    SPELL_DARK_MEDITATION_VISUAL   = 143843, // Visual area and Dummy Effect 0 (Unk).
-    SPELL_DARK_MEDITATION_DMG_RED  = 143564, // Damage reduction aura on players inside the field.
-
-    // ! On HEROIC difficulty, Sun Tenderheart periodically fires a bolt of dark energy !
-    SPELL_MEDITATION_SPIKE_MISSILE = 143599, // Triggers SPELL_MEDITATION_SPIKE_DAMAGE.
-    SPELL_MEDITATION_SPIKE_DAMAGE  = 143602, // Damage.
-
-    /*** Adds (Desperate Measures) ***/
-
-    // Embodied Misery
-    SPELL_DEFILED_GROUND           = 143961, // Damage, Knockback and trigger SPELL_DEFILED_GROUND_AT (Effect 1).
-    SPELL_DEFILED_GROUND_AT        = 143960, // Creates Areatrigger 1053 (Defiled Ground).
-    SPELL_DEFILED_GROUND_AURA      = 143959, // Triggers Periodic Damage (Player aura).
-
-    // Embodied Sorrow
-    SPELL_INFERNO_STRIKE           = 143962, // Dummy for damage increase on Effect 0, Damage on effect 1. Damage split between targets in 8 yards.
-
-    // Embodied Gloom 
-    SPELL_CORRUPTION_SHOCK         = 143958, // Dummy on Effect 0 for SPELL_CORRUPTION_SHOCK_MISSILE (2, 5, 4, 10 targets).
-    SPELL_CORRUPTION_SHOCK_MISSILE = 144020, // Triggers SPELL_CORRUPTION_SHOCK_DAMAGE at location.
-    SPELL_CORRUPTION_SHOCK_DAMAGE  = 144018, // Damage.
-
-    // ! On HEROIC difficulty, Corruption Chain replaces Corruption Shock !
-    SPELL_CORRUPTION_CHAIN         = 145653, // Cast time and dummy on Effect 0 for SPELL_CORRUPTION_CHAIN_DAMAGE.
-    SPELL_CORRUPTION_CHAIN_DAMAGE  = 145631, // Damage and chain.
-
-    // All three above.
-    SPELL_SHARED_TORMENT           = 145655, // All three NPC's share health.
-
-    // Embodied Anguish
-    SPELL_SHADOW_WEAKNESS_AURA     = 144079, // Proc aura for SPELL_SHADOW_WEAKNESS.
-    SPELL_SHADOW_WEAKNESS          = 144176,
-    SPELL_SHADOW_WEAKNESS_TRANSFER = 144081, // Dummy on Effect 0 to apply a stack of SPELL_SHADOW_WEAKNESS on all players when using SPELL_MARK_OF_ANGUISH_TRANSFER.
-
-    // Manifest Emotions – Embodied Despair and Embodied Desperation focus their negative emotions, creating Sha manifestations which attack players. 
-    // Any damage taken by these manifested emotions will also be suffered by the creature that spawned them.
-
-    // Embodied Despair
-    SPELL_MANIFEST_DESPAIR         = 143746, // Summons NPC_DESPAIR_SPAWN.
-
-    // Embodied Desperation
-    SPELL_MANIFEST_DESPERATION     = 144504  // Summons NPC_DESPERATION_SPAWN.
+    NPC_EMBODIED_DESPAIR        = 71474,
+    NPC_EMBODIED_DESPERATION    = 71482,
+    NPC_DESPAIR_SPAWN           = 71712,
+    NPC_DESPERATION_SPAWN       = 71993,
 };
 
 enum Events
 {
-    /*** Bosses ***/
+    EVENT_BOND_OF_GOLDEN_LOTUS_END  = 1,
+    EVENT_BERSERK,
 
-    // Rook Stonetoe
-    EVENT_ROOK_VENGEFUL_STRIKES    = 1,      //  7 seconds after combat start. Every 21 seconds.
-    EVENT_ROOK_CORRUPTED_BREW,               // 18 seconds after combat start. Every 17-25 seconds.
-    EVENT_ROOK_CLASH,                        // 45 seconds after combat start. Every 46 seconds.
-    EVENT_ROOK_CORRUPTION_KICK,              // After Clash.
-    EVENT_ROOK_DESPERATE_MEASURES,
+    EVENT_VENGEFUL_STRIKES,
+    EVENT_CORRUPTED_BREW,
+    EVENT_CLASH,
 
-    // He Softfoot
-    EVENT_HE_GARROTE,                        // 15 seconds after combat start. Every 30-46 (Heroic 20-26) seconds.
-    EVENT_HE_GOUGE,                          // 23 seconds after combat start. Every 30-41 seconds.
-    EVENT_HE_POISON_DAGGERS,
-    EVENT_HE_DESPERATE_MEASURES,
+    EVENT_AGGRO,
+    EVENT_DEFILED_GROUND,
+    EVENT_INFERNO_STRIKE,
+    EVENT_CORRUPTION_SHOCK,
 
-    // Sun Tenderheart
-    EVENT_SUN_SHA_SHEAR,
-    EVENT_SUN_SHADOW_WORD_BANE,              // 15 seconds after combat start. Every 17-25 (Heroic 13-20) seconds.
-    EVENT_SUN_CALAMITY,                      // 31 seconds after combat start. Every 40-50 seconds.
-    EVENT_SUN_DESPERATE_MEASURES,
-    EVENT_SUN_MEDITATION_SPIKE,              // HEROIC only!
+    EVENT_GOUGE,
+    EVENT_SHADOWSTEP,
+    EVENT_SHADOWSTEP_BACK,
+    EVENT_RESET_REACT_STATE,
+    EVENT_POISON,
 
-    // General
-    EVENT_CHECK_BOND_OF_THE_GOLDEN_LOTUS,
-    EVENT_BERSERK,                           // 900 seconds Normal. 600 seconds Heroic.
+    EVENT_MARK_OF_ANGUISH,
+    EVENT_MARK_OF_ANGUISH_TARGET_CHANGED,
+    EVENT_CHECK_MARK_OF_ANGUISH_TARGET,
 
-    /*** Adds (Desperate Measures) ***/
+    EVENT_SHA_SEAR,
+    EVENT_CALAMITY,
+    EVENT_SHADOW_WORD_BANE,
+    EVENT_DARK_MEDITATION,
+    EVENT_DARK_MEDITATION_DMG,
+    EVENT_MANIFEST,
+};
 
-    // Embodied Misery
-    EVENT_DEFILED_GROUND,                    // Every 10.5 seconds.
-
-    // Embodied Sorrow
-    EVENT_INFERNO_STRIKE,                    // Every 9.5 seconds.
-
-    // Embodied Gloom 
-    EVENT_CORRUPTION_SHOCK_CHAIN,            // Shock -> Chain HEROIC!
-
-    // Embodied Despair
-    EVENT_MANIFEST_DESPAIR,
-
-    // Embodied Desperation
-    EVENT_MANIFEST_DESPERATION
+enum Timers
+{
+    TIMER_BERSERK = 10 * MINUTE * IN_MILLISECONDS,
+    TIMER_EVADE_CHECK = 5 * IN_MILLISECONDS,
 };
 
 enum Actions
 {
-    ACTION_EVENT_COMPLETE         = 1
+    DATA_CASTING_LOW_HEALTH = 1,
+    GUID_MARK_OF_ANGUISH,
+    ACTION_OTHER_BOSS_BEGINS_MEASURES,
+    ACTION_OTHER_BOSS_ENDS_MEASURES,
+    DATA_ABILITY_COUNT,
+    ACTION_PREPARE_SHADOWSTEP_BACK,
+
+    /// Rook Stonetoe
+    ACTION_VENGEFUL_STRIKES_FAILED,
+
+    ACTION_SPAWNS_SYNC_HP,
 };
 
-enum Npcs
+enum Guids
 {
-    /*** Bosses ***/
-
-    // Rook Stonetoe
-    NPC_EMBODIED_MISERY            = 71476,
-    NPC_EMBODIED_SORROW            = 71481,
-    NPC_EMBODIED_GLOOM             = 71477,
-
-    // He Softfoot
-    NPC_EMBODIED_ANGUISH           = 71478,
-
-    // Sun Tenderheart
-    NPC_EMBODIED_DESPAIR           = 71474,
-    NPC_EMBODIED_DESPERATION       = 71482,
-
-    /*** Adds (Desperate Measures) ***/
-
-    // Embodied Despair
-    NPC_DESPAIR_SPAWN              = 71712,
-
-    // Embodied Desperation
-    NPC_DESPERATION_SPAWN          = 71993
+    GUID_FIXATE_TARGET = 1
 };
 
-/*** Bosses ***/
+const Position embodiedStonetoePos[6] =
+{
+    { 1201.225f, 1018.279f, 452.1667f, 0.04791985f }, // Embodied Misery in air
+    { 1201.64f, 1009.629f, 452.1667f, 0.04791985f },  // Embodied Sorrow in air
+    { 1208.924f, 1014.313f, 452.1667f, 0.04791985f }, // Embodied Gloom in air
+    { 1203.12f, 1011.185f, 418.1869f, 1.138274f },    // Embodied Misery on ground
+    { 1228.698f, 1038.337f, 418.0633f, 3.502512f },   // Embodied Sorrowon ground
+    { 1195.622f, 1037.929f, 418.0638f, 5.916756f }    // Embodied Gloom on ground
+};
 
-// Rook Stonetoe 71475 - Acts as controller!
+const Position embodiedDespairPos = { 1205.122f, 1007.743f, 418.0642f, 1.267296f };
+const Position embodiedDesperationPos = { 1220.946f, 1055.802f, 417.523224f, 4.353518f };
+
+struct fallen_protectorAI : public BossAI
+{
+    fallen_protectorAI(Creature* creature) : BossAI(creature, DATA_FALLEN_PROTECTORS)
+    {
+        //ApplyAllImmunities(true);
+
+        me->setActive(true);
+    }
+
+    void Reset() override
+    {
+        me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
+        me->SetReactState(REACT_DEFENSIVE);
+
+        m_IsCastingLowHealth = false;
+        m_SummonedNpcsForMeasures.clear();
+        m_Phase = 0;
+        m_IsInMeasure = false;
+        m_AbilityCount = 0;
+        m_evadeTimer = TIMER_EVADE_CHECK;
+    }
+
+    void EnterCombat(Unit* who) override
+    {
+        bool isFirstAggro = true;
+
+        std::list<Creature*> otherBosses;
+        //GetOtherBosses(otherBosses);
+
+        for (Creature* pBoss : otherBosses)
+        {
+            if (pBoss && !pBoss->IsInCombat())
+            {
+                DoZoneInCombat(pBoss);
+            }
+            else
+            {
+                isFirstAggro = false;
+            }
+        }
+
+        if (isFirstAggro)
+        {
+            DoFirstAggro();
+        }
+
+        instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+    }
+
+    uint32 GetData(uint32 type) const override
+    {
+        if (type == DATA_CASTING_LOW_HEALTH)
+        {
+            return m_IsCastingLowHealth ? 1 : 0;
+        }
+        else if (type == DATA_ABILITY_COUNT)
+        {
+            return m_AbilityCount;
+        }
+
+        return 0;
+    }
+
+    void DamageTaken(Unit* who, uint32 & damage) override
+    {
+        if (me->GetHealth() <= damage)
+        {
+            if (IsCastingLowHealth())
+            {
+                damage = me->GetHealth() - 1;
+            }
+            else
+            {
+                if (!IsOthersCastingLowHealth())
+                {
+                    DoBoundOfGoldenLotus();
+
+                    SetCastingLowHealth(true);
+
+                    damage = me->GetHealth() - 1;
+
+                    me->CastStop();
+
+                    DoCast(me, SPELL_BOND_OF_THE_GOLDEN_LOTUS);
+
+                    events.ScheduleEvent(EVENT_BOND_OF_GOLDEN_LOTUS_END, 15000);
+                }
+                else
+                {
+                    KillOthers();
+                }
+            }
+        }
+    }
+
+    void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
+    {
+        if (IsInMeasures())
+        {
+            RemoveMeasureNpc(summon->GetEntry());
+
+            if (!IsAnyMeasureNpc())
+                EndMeasures();
+        }
+    }
+
+    void DoAction(const int32 action) override
+    {
+        if (action == ACTION_OTHER_BOSS_BEGINS_MEASURES)
+        {
+            OtherBossBeginsMeasures();
+        }
+        else if (action == ACTION_OTHER_BOSS_ENDS_MEASURES)
+        {
+            OtherBossEndsMeasures();
+        }
+    }
+
+    void JustDied(Unit* who) override
+    {
+        _JustDied();
+    }
+
+    bool CheckPhase()
+    {
+        if ((m_Phase == 0 && me->GetHealthPct() < 66.0f) ||
+            (m_Phase == 2 && me->GetHealthPct() < 33.0f))
+        {
+            ++m_Phase;
+
+            //BeginMeasures();
+
+            return true;
+        }
+
+        return false;
+    }
+
+    void UpdateAI(const uint32 diff) override
+    {
+        if (m_evadeTimer <= diff)
+        {
+            m_evadeTimer = TIMER_EVADE_CHECK;
+
+            if (me->GetExactDist(&me->GetHomePosition()) >= 65.0f)
+            {
+                EnterEvadeMode(EVADE_REASON_BOUNDARY);
+
+                std::list<Creature*> otherBosses;
+                //GetOtherBosses(otherBosses);
+
+                for (Creature* other : otherBosses)
+                    other->AI()->EnterEvadeMode();
+                return;
+            }
+        }
+        else
+            m_evadeTimer -= diff;
+
+        _Update(diff);
+    }
+
+protected:
+
+    virtual void _Update(uint32 diff) = 0;
+    virtual void DoFirstAggro() = 0;
+    virtual void DoBoundOfGoldenLotus() = 0;
+    virtual void DoBeginMeasures() = 0;
+    virtual void DoEndMeasures() = 0;
+    virtual void OtherBossBeginsMeasures() = 0;
+    virtual void OtherBossEndsMeasures() = 0;
+
+    bool IsCastingLowHealth() const { return m_IsCastingLowHealth; }
+    void SetCastingLowHealth(bool value) { m_IsCastingLowHealth = value; }
+
+    void AddMeasureNpc(uint32 entry) { m_SummonedNpcsForMeasures.insert(entry); }
+    void RemoveMeasureNpc(uint32 entry) { m_SummonedNpcsForMeasures.erase(entry); }
+    bool IsAnyMeasureNpc() const { return !m_SummonedNpcsForMeasures.empty(); }
+
+    bool IsInMeasures() const { return m_IsInMeasure; }
+    void SetInMeasures(bool value) { m_IsInMeasure = value; }
+
+    void IncreaseAbilityCount() { ++m_AbilityCount; }
+
+    void ApplyBerserkToAll()
+    {
+        if (Creature* pRook = GetRookStoneToe())
+            pRook->AddAura(SPELL_BERSERK, pRook);
+
+        if (Creature* pHe = GetHeSoftFoot())
+            pHe->AddAura(SPELL_BERSERK, pHe);
+
+        if (Creature* pSun = GetSunTenderHeart())
+            pSun->AddAura(SPELL_BERSERK, pSun);
+    }
+
+private:
+
+    Creature* GetRookStoneToe()
+    {
+        return instance->instance->GetCreature(instance->GetObjectGuid(DATA_ROOK_STONETOE));
+    }
+
+    Creature* GetHeSoftFoot()
+    {
+        return instance->instance->GetCreature(instance->GetObjectGuid(DATA_HE_SOFTFOOT));
+    }
+
+    Creature* GetSunTenderHeart()
+    {
+        return instance->instance->GetCreature(instance->GetObjectGuid(DATA_SUN_TENDERHEART));
+    }
+
+    /*void GetOtherBosses(std::list<Creature*>& creatures)
+    {
+        Creature* pRook = GetRookStoneToe();
+        Creature* pHe = GetHeSoftFoot();
+        Creature* pSun = GetSunTenderHeart();
+
+        if (pRook && pRook->GetEntry() != me->GetEntry())
+            creatures.push_back(pRook);
+
+        if (pHe && pHe->GetEntry() != me->GetEntry())
+            creatures.push_back(pHe);
+
+        if (pSun && pSun->GetEntry() != me->GetEntry())
+            creatures.push_back(pSun);
+    }*/
+
+    bool IsOthersCastingLowHealth()
+    {
+        std::list<Creature*> otherBosses;
+        //GetOtherBosses(otherBosses);
+
+        for (Creature* pBoss : otherBosses)
+        {
+            if (pBoss)
+            {
+                if (pBoss->AI()->GetData(DATA_CASTING_LOW_HEALTH) == 0)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    void KillOthers()
+    {
+        std::list<Creature*> otherBosses;
+        //GetOtherBosses(otherBosses);
+
+        for (Creature* pBoss : otherBosses)
+        {
+            if (pBoss)
+            {
+                if (Unit* victim = pBoss->GetVictim())
+                {
+                    victim->Kill(pBoss);
+                }
+            }
+        }
+    }
+
+    void BeginMeasures()
+    {
+        SetInMeasures(true);
+        NotifyOtherBossesForMeasures(true);
+
+        m_AbilityCount = 0;
+
+        me->SetUnitFlags(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
+        me->AttackStop();
+        me->StopMoving();
+        me->InterruptNonMeleeSpells(true);
+        me->SetReactState(REACT_PASSIVE);
+
+        instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+        DoBeginMeasures();
+    }
+
+    void EndMeasures()
+    {
+        SetInMeasures(false);
+        NotifyOtherBossesForMeasures(false);
+
+        ++m_Phase;
+        me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
+        me->SetReactState(REACT_AGGRESSIVE);
+
+        instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
+        DoEndMeasures();
+    }
+
+    void NotifyOtherBossesForMeasures(bool isInMeasure)
+    {
+        std::list<Creature*> otherBosses;
+        //GetOtherBosses(otherBosses);
+
+        for (Creature* pBoss : otherBosses)
+        {
+            if (pBoss)
+            {
+                pBoss->AI()->DoAction(isInMeasure ? ACTION_OTHER_BOSS_BEGINS_MEASURES : ACTION_OTHER_BOSS_ENDS_MEASURES);
+            }
+        }
+    }
+
+private:
+
+    bool m_IsCastingLowHealth;
+    std::set<uint32 /*entry*/> m_SummonedNpcsForMeasures;
+    uint8 m_Phase;
+    bool m_IsInMeasure;
+    uint32 m_AbilityCount;
+    uint32 m_evadeTimer;
+};
+
 class boss_rook_stonetoe : public CreatureScript
 {
     public:
         boss_rook_stonetoe() : CreatureScript("boss_rook_stonetoe") { }
 
-        struct boss_rook_stonetoeAI : public BossAI
-        {
-            boss_rook_stonetoeAI(Creature* creature) : BossAI(creature, DATA_FALLEN_PROTECTORS_EVENT), summons(me)
-            {
-                instance  = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            SummonList summons;
-            EventMap events;
-            bool doneDesperateMeasuresPhase, doneDesperateMeasuresPhase2;
-            bool lotusScheduled, eventComplete;
-
-            void Reset()
-            {
-                events.Reset();
-                summons.DespawnAll();
-
-                doneDesperateMeasuresPhase  = false;
-                doneDesperateMeasuresPhase2 = false;
-
-                lotusScheduled = false;
-                eventComplete  = false;
-
-                if (instance)
-                    instance->SetData(DATA_FALLEN_PROTECTORS_EVENT, NOT_STARTED);
-
-                _Reset();
-            }
-
-            void EnterCombat(Unit* who)
-            {
-                if (Creature* heSoftfoot = me->FindNearestCreature(BOSS_HE_SOFTFOOT, 300.0f, true))
-                    if (!heSoftfoot->isInCombat())
-                        heSoftfoot->AI()->DoZoneInCombat();
-                if (Creature* sunTenderheart = me->FindNearestCreature(BOSS_SUN_TENDERHEART, 300.0f, true))
-                    if (!sunTenderheart->isInCombat())
-                        sunTenderheart->AI()->DoZoneInCombat();
-
-                Talk(ROOK_SAY_AGGRO);
-
-				events.ScheduleEvent(EVENT_ROOK_VENGEFUL_STRIKES, 7000);
-				events.ScheduleEvent(EVENT_ROOK_CORRUPTED_BREW, 18000);
-				events.ScheduleEvent(EVENT_ROOK_CLASH, 45000);
-
-				events.ScheduleEvent(EVENT_BERSERK, (!me->GetMap()->IsHeroic() ? 15 : 10) * MINUTE * IN_MILLISECONDS);
-
-                if (instance)
-                    instance->SetData(DATA_FALLEN_PROTECTORS_EVENT, IN_PROGRESS);
-
-                _EnterCombat();
-            }
-
-            void DamageTaken(Unit* doneBy, uint32 &uiDamage)
-            {
-                if (uiDamage >= me->GetHealth())
-                {
-                    if (!eventComplete)
-                    {
-                        uiDamage = 0;
-                        me->SetHealth(1);
-                    }
-
-                    if (!lotusScheduled)
-                    {
-                        Talk(ROOK_SAY_BOND_LOTUS);
-                        Talk(ROOK_ANNOUNCE_BOND_LOTUS);
-                        events.ScheduleEvent(EVENT_CHECK_BOND_OF_THE_GOLDEN_LOTUS, 1000);
-                        lotusScheduled = true;
-                    }
-                }
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-                summons.Summon(summon);
-				summon->setActive(true);
-
-				if (me->isInCombat())
-					summon->SetInCombatWithZone();
-            }
-
-            void DespawnSummon(uint32 entry)
-            {
-                std::list<Creature*> summonsList;
-                GetCreatureListWithEntryInGrid(summonsList, me, entry, 200.0f);
-                if (!summonsList.empty())
-                    for (std::list<Creature*>::iterator summs = summonsList.begin(); summs != summonsList.end(); summs++)
-                        (*summs)->DespawnOrUnsummon();
-            }
-
-            void KilledUnit(Unit* victim)
-            {
-                if (victim->GetTypeId() == TYPEID_PLAYER)
-                    Talk(ROOK_SAY_KILL);
-            }
-
-			void EnterEvadeMode()
-            {
-                if (me->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE))
-                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-
-                me->AddUnitState(UNIT_STATE_EVADE);
-
-                me->RemoveAllAuras();
-                me->RemoveAllAreaTriggers();
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(true);
-                me->GetMotionMaster()->MovementExpired();
-                me->GetMotionMaster()->MoveTargetedHome();
-
-                if (instance)
-                    instance->SetData(DATA_FALLEN_PROTECTORS_EVENT, FAIL);
-
-                _EnterEvadeMode();
-            }
-
-            void JustReachedHome()
-            {
-                me->ClearUnitState(UNIT_STATE_EVADE);
-
-                _JustReachedHome();
-            }
-
-            void JustDied(Unit* killer)
-            {
-                _JustDied();
-            }
-
-            // Used to signal event done.
-            void FinishEvent()
-            {
-                Talk(ROOK_SAY_EVENT_COMPLETE);
-
-                summons.DespawnAll();
-
-                me->RemoveAllAuras();
-                me->RemoveAllAreaTriggers();
-                me->DeleteThreatList();
-                me->CombatStop(true);
-                me->setFaction(35);
-                me->SetFullHealth();
-
-                me->GetMotionMaster()->MovementExpired();
-                me->GetMotionMaster()->MoveTargetedHome();
-
-                if (instance)
-                    instance->SetData(DATA_FALLEN_PROTECTORS_EVENT, DONE);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                if (lotusScheduled && !eventComplete)
-                {
-                    if (Creature* heSoftfoot = me->FindNearestCreature(BOSS_HE_SOFTFOOT, 300.0f, true))
-                    {
-                        if (Creature* sunTenderheart = me->FindNearestCreature(BOSS_SUN_TENDERHEART, 300.0f, true))
-                        {
-                            if (heSoftfoot->GetHealth() == 1 && sunTenderheart->GetHealth() == 1)
-                            {
-                                heSoftfoot->AI()->DoAction(ACTION_EVENT_COMPLETE);
-                                sunTenderheart->AI()->DoAction(ACTION_EVENT_COMPLETE);
-                                FinishEvent();
-                                eventComplete = true;
-                            }
-                        }
-                    }
-                }
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                // if (instance && instance->IsWipe())
-                // {
-                //     EnterEvadeMode();
-                //     return;
-                // }
-
-                // Schedule Desperate Measures phase entrance.
-                if (me->HealthBelowPct(67) && !doneDesperateMeasuresPhase ||  me->HealthBelowPct(34) && !doneDesperateMeasuresPhase2)
-                {
-                    events.ScheduleEvent(EVENT_ROOK_DESPERATE_MEASURES, 500);
-                    if (!doneDesperateMeasuresPhase)
-                        doneDesperateMeasuresPhase = true;
-                    else
-                        doneDesperateMeasuresPhase2 = true;
-                }
-
-                // Schedule Desperate Measures phase exit.
-                if ((doneDesperateMeasuresPhase || doneDesperateMeasuresPhase2) && !me->FindNearestCreature(NPC_EMBODIED_MISERY, 300.0f, true) && !me->FindNearestCreature(NPC_EMBODIED_SORROW, 300.0f, true) && !me->FindNearestCreature(NPC_EMBODIED_GLOOM, 300.0f, true))
-                {
-                    if (me->HasAura(SPELL_MISSERY_SORROW_GLOOM))
-                    {
-                        if (!me->GetMap()->IsHeroic())
-                            me->RemoveAurasDueToSpell(SPELL_ROOT_GENERIC);
-                        me->RemoveAurasDueToSpell(SPELL_MISSERY_SORROW_GLOOM);
-
-                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-
-                        // Reschedule the normal events.
-				        events.ScheduleEvent(EVENT_ROOK_VENGEFUL_STRIKES, 7000);
-				        events.ScheduleEvent(EVENT_ROOK_CORRUPTED_BREW, 18000);
-
-                        // On Normal difficulty Clash needs reschedule.
-                        if (!me->GetMap()->IsHeroic())
-                            events.ScheduleEvent(EVENT_ROOK_CLASH, 45000);
-                    }
-                }
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_ROOK_VENGEFUL_STRIKES:
-                            DoCast(me->getVictim(), SPELL_VENGEFUL_STRIKES);
-				            events.ScheduleEvent(EVENT_ROOK_VENGEFUL_STRIKES, 21000);
-                            break;
-
-                        case EVENT_ROOK_CORRUPTED_BREW:
-                            DoCast(me, SPELL_CORRUPTED_BREW);
-				            events.ScheduleEvent(EVENT_ROOK_CORRUPTED_BREW, urand(17000, 25000));
-                            break;
-
-                        case EVENT_ROOK_CLASH:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_FARTHEST, 0, 100.0f, true))
-                            {
-                                DoCast(target, SPELL_CLASH_ROOK);
-                                target->CastSpell(me, SPELL_CLASH_TARGET, true);
-                            }
-                            events.ScheduleEvent(EVENT_ROOK_CORRUPTION_KICK, 2000);
-				            events.ScheduleEvent(EVENT_ROOK_CLASH, 46000);
-                            break;
-
-                        case EVENT_ROOK_CORRUPTION_KICK:
-                            Talk(ROOK_SAY_CORRUPTION_KICK);
-                            DoCast(me, SPELL_CORRUPTION_KICK);
-                            break;
-
-                        case EVENT_ROOK_DESPERATE_MEASURES:
-                            Talk(ROOK_SAY_DESPERATE_MEASURES);
-                            Talk(ROOK_ANNOUNCE_MEASURES);
-
-                            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-
-                            // Cancel the normal events.
-				            events.CancelEvent(EVENT_ROOK_VENGEFUL_STRIKES);
-				            events.CancelEvent(EVENT_ROOK_CORRUPTED_BREW);
-				            events.CancelEvent(EVENT_ROOK_CORRUPTION_KICK);
-
-                            // On Normal difficulty Clash is not cast during this phase. Also the boss does not move.
-                            if (!me->GetMap()->IsHeroic())
-                            {
-                                events.CancelEvent(EVENT_ROOK_CLASH);
-                                me->AddAura(SPELL_ROOT_GENERIC, me);
-                            }
-
-                            DoCast(me, SPELL_MISSERY_SORROW_GLOOM);
-
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                                me->SummonCreature(NPC_EMBODIED_MISERY, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), 0.0f, TEMPSUMMON_CORPSE_DESPAWN, 1000);
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                                me->SummonCreature(NPC_EMBODIED_SORROW, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), 0.0f, TEMPSUMMON_CORPSE_DESPAWN, 1000);
-                            me->SummonCreature(NPC_EMBODIED_GLOOM, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 0.0f, TEMPSUMMON_CORPSE_DESPAWN, 1000);
-                            break;
-
-                        case EVENT_BERSERK:
-                            DoCast(me, SPELL_BERSERK);
-                            if (Creature* heSoftfoot = me->FindNearestCreature(BOSS_HE_SOFTFOOT, 300.0f, true))
-                                heSoftfoot->CastSpell(heSoftfoot, SPELL_BERSERK, false);
-                            if (Creature* sunTenderheart = me->FindNearestCreature(BOSS_SUN_TENDERHEART, 300.0f, true))
-                                sunTenderheart->CastSpell(sunTenderheart, SPELL_BERSERK, false);
-                            break;
-
-                        case EVENT_CHECK_BOND_OF_THE_GOLDEN_LOTUS:
-                            if (me->HealthBelowPct(100) && !eventComplete)
-                            {
-                                Talk(ROOK_ANNOUNCE_BOND_LOTUS);
-                                DoCast(me, SPELL_BOND_OF_THE_GOLDEN_LOTUS);
-                                events.ScheduleEvent(EVENT_CHECK_BOND_OF_THE_GOLDEN_LOTUS, 16000);
-                            }
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                // Rook does not melee in Desperate Measures phases.
-                if (!me->HasAura(SPELL_MISSERY_SORROW_GLOOM))
-                    DoMeleeAttackIfReady();
-            }
-        };
-
         CreatureAI* GetAI(Creature* creature) const
         {
             return new boss_rook_stonetoeAI(creature);
         }
+
+        struct boss_rook_stonetoeAI : public fallen_protectorAI
+        {
+            boss_rook_stonetoeAI(Creature* creature) : fallen_protectorAI(creature) { }
+
+            void Reset() override
+            {
+                fallen_protectorAI::Reset();
+            }
+
+            void EnterCombat(Unit* attacker) override
+            {
+                _EnterCombat();
+                events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 8000);
+                events.ScheduleEvent(EVENT_CORRUPTED_BREW, 18000);
+                events.ScheduleEvent(EVENT_CLASH, 45000);
+                events.ScheduleEvent(EVENT_BERSERK, TIMER_BERSERK);
+            }
+
+            void KilledUnit(Unit* who) override
+            {
+                if (who->IsPlayer())
+                {
+                    Talk(SAY_ROOK_KILL);
+                }
+            }
+
+            void DoAction(const int32 p_Action) override
+            {
+                if (p_Action == Actions::ACTION_VENGEFUL_STRIKES_FAILED)
+                    events.RescheduleEvent(EVENT_VENGEFUL_STRIKES, urand(3000, 5000));
+            }
+
+            void JustDied(Unit* who) override
+            {
+                _JustDied();
+                Talk(SAY_ROOK_DEATH);
+            }
+
+            void MovementInform(uint32 type, uint32 id) override
+            {
+                if (id == EVENT_JUMP)
+                {
+                    Talk(SAY_ROOK_KICK);
+
+                    me->GetMotionMaster()->MovementExpired(false);
+                    DoCast(me, SPELL_CORRUPTION_KICK);
+
+                    // reenable moving to the target
+                    me->ClearUnitState(UNIT_STATE_MELEE_ATTACKING);
+                }
+            }
+
+            void _Update(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                if (CheckPhase())
+                    return;
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                if (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_BERSERK:
+                            ApplyBerserkToAll();
+                            break;
+                        case EVENT_BOND_OF_GOLDEN_LOTUS_END:
+                            SetCastingLowHealth(false);
+                            break;
+                        case EVENT_VENGEFUL_STRIKES:
+                            if (auto l_Victim = me->GetVictim())
+                            {
+                                if (me->GetDistance(l_Victim) < 5.f)
+                                {
+                                    DoCastVictim(SPELL_VENGEFUL_STRIKES);
+                                    events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 20000);
+                                }
+                                else
+                                    events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 3000);
+                            }
+                            break;
+                        case EVENT_CORRUPTED_BREW:
+                            DoCorruptedBrew();
+                            events.ScheduleEvent(EVENT_CORRUPTED_BREW, 11000);
+                            break;
+                        case EVENT_CLASH:
+                            DoCastAOE(SPELL_CLASH_AOE);
+                            events.ScheduleEvent(EVENT_CLASH, 46000);
+                            break;
+                        case EVENT_AGGRO:
+                            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                            events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 7500);
+                            events.ScheduleEvent(EVENT_CORRUPTED_BREW, 17000);
+                            events.ScheduleEvent(EVENT_CLASH, 45000);
+                            break;
+                        default:
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+
+        protected:
+
+            void DoCorruptedBrew()
+            {
+                IncreaseAbilityCount();
+
+                me->CastCustomSpell(Spells::SPELL_CORRUPTED_BREW_AOE, SpellValueMod::SPELLVALUE_MAX_TARGETS, Is25ManRaid() ? 3 : 1, nullptr, true);
+            }
+
+            virtual void DoFirstAggro() override
+            {
+                Talk(SAY_ROOK_AGGRO);
+            }
+
+            virtual void DoBoundOfGoldenLotus() override
+            {
+                Talk(SAY_ROOK_LOTUS);
+            }
+
+            virtual void DoBeginMeasures() override
+            {
+                Talk(SAY_ROOK_MEASURES);
+
+                events.CancelEvent(EVENT_VENGEFUL_STRIKES);
+                events.CancelEvent(EVENT_CORRUPTED_BREW);
+                events.CancelEvent(EVENT_CLASH);
+
+                me->CastSpell(me, SPELL_MISERY_SORROW_AND_GLOOM, true);
+
+                if (Creature* pMisery = me->SummonCreature(NPC_EMBODIED_MISERY, embodiedStonetoePos[0]))
+                {
+                    AddMeasureNpc(pMisery->GetEntry());
+                    pMisery->GetMotionMaster()->MoveJump(embodiedStonetoePos[3].GetPositionX(), embodiedStonetoePos[3].GetPositionY(), embodiedStonetoePos[3].GetPositionZ() + 0.1f, 40.0f, 20.0f, embodiedStonetoePos[3].GetOrientation());
+                }
+                if (Creature* pSorrow = me->SummonCreature(NPC_EMBODIED_SORROW, embodiedStonetoePos[1]))
+                {
+                    AddMeasureNpc(pSorrow->GetEntry());
+                    pSorrow->GetMotionMaster()->MoveJump(embodiedStonetoePos[4].GetPositionX(), embodiedStonetoePos[4].GetPositionY(), embodiedStonetoePos[4].GetPositionZ() + 0.1f, 40.0f, 20.0f, embodiedStonetoePos[4].GetOrientation());
+                }
+                if (Creature* pGloom = me->SummonCreature(NPC_EMBODIED_GLOOM, embodiedStonetoePos[2]))
+                {
+                    AddMeasureNpc(pGloom->GetEntry());
+                    pGloom->GetMotionMaster()->MoveJump(embodiedStonetoePos[5].GetPositionX(), embodiedStonetoePos[5].GetPositionY(), embodiedStonetoePos[5].GetPositionZ() + 0.1f, 40.0f, 20.0f, embodiedStonetoePos[5].GetOrientation());
+                }
+            }
+
+            virtual void DoEndMeasures() override
+            {
+                me->RemoveAura(SPELL_MISERY_SORROW_AND_GLOOM);
+
+                me->SetReactState(ReactStates::REACT_PASSIVE);
+                events.ScheduleEvent(Events::EVENT_AGGRO, 5000);
+            }
+
+            virtual void OtherBossBeginsMeasures() override
+            {
+                if (!IsHeroic())
+                {
+                    events.PauseEvent(EVENT_CLASH);
+                }
+            }
+
+            virtual void OtherBossEndsMeasures() override
+            {
+                if (!IsHeroic())
+                {
+                    events.ContinueEvent(EVENT_CLASH);
+                }
+            }
+        };
 };
 
-// He Softfoot 71479.
 class boss_he_softfoot : public CreatureScript
 {
     public:
         boss_he_softfoot() : CreatureScript("boss_he_softfoot") { }
 
-        struct boss_he_softfootAI : public BossAI
-        {
-            boss_he_softfootAI(Creature* creature) : BossAI(creature, DATA_FALLEN_PROTECTORS_EVENT), summons(me)
-            {
-                instance  = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            SummonList summons;
-            EventMap events;
-            bool doneDesperateMeasuresPhase, doneDesperateMeasuresPhase2;
-            bool lotusScheduled, eventComplete;
-
-            void Reset()
-            {
-                events.Reset();
-                summons.DespawnAll();
-
-                doneDesperateMeasuresPhase  = false;
-                doneDesperateMeasuresPhase2 = false;
-
-                lotusScheduled = false;
-                eventComplete  = false;
-
-                _Reset();
-            }
-
-            void EnterCombat(Unit* who)
-            {
-                if (Creature* rookStonetoe = me->FindNearestCreature(BOSS_ROOK_STONETOE, 300.0f, true))
-                    if (!rookStonetoe->isInCombat())
-                        rookStonetoe->AI()->DoZoneInCombat();
-                if (Creature* sunTenderheart = me->FindNearestCreature(BOSS_SUN_TENDERHEART, 300.0f, true))
-                    if (!sunTenderheart->isInCombat())
-                        sunTenderheart->AI()->DoZoneInCombat();
-
-                Talk(HE_SAY_AGGRO);
-
-				events.ScheduleEvent(EVENT_HE_GARROTE, 15000);
-				events.ScheduleEvent(EVENT_HE_GOUGE, 23000);
-				events.ScheduleEvent(EVENT_HE_POISON_DAGGERS, 45000);
-
-                _EnterCombat();
-            }
-
-            void DamageTaken(Unit* doneBy, uint32 &uiDamage)
-            {
-                if (uiDamage >= me->GetHealth())
-                {
-                    if (!eventComplete)
-                    {
-                        uiDamage = 0;
-                        me->SetHealth(1);
-                    }
-
-                    if (!lotusScheduled)
-                    {
-                        Talk(HE_SAY_BOND_LOTUS);
-                        Talk(HE_ANNOUNCE_BOND_LOTUS);
-                        events.ScheduleEvent(EVENT_CHECK_BOND_OF_THE_GOLDEN_LOTUS, 1000);
-                        lotusScheduled = true;
-                    }
-                }
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-                summons.Summon(summon);
-				summon->setActive(true);
-
-				if (me->isInCombat())
-					summon->SetInCombatWithZone();
-            }
-
-            void DespawnSummon(uint32 entry)
-            {
-                std::list<Creature*> summonsList;
-                GetCreatureListWithEntryInGrid(summonsList, me, entry, 200.0f);
-                if (!summonsList.empty())
-                    for (std::list<Creature*>::iterator summs = summonsList.begin(); summs != summonsList.end(); summs++)
-                        (*summs)->DespawnOrUnsummon();
-            }
-
-            void DoAction(int32 const action)
-            {
-                switch (action)
-                {
-                    case ACTION_EVENT_COMPLETE:
-                        FinishEvent();
-                        break;
-
-                    default: break;
-                }
-            };
-
-			void EnterEvadeMode()
-            {
-                if (me->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE))
-                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-
-                me->AddUnitState(UNIT_STATE_EVADE);
-
-                me->RemoveAllAuras();
-                me->RemoveAllAreaTriggers();
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(true);
-                me->GetMotionMaster()->MovementExpired();
-                me->GetMotionMaster()->MoveTargetedHome();
-
-                if (instance)
-                {
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_HE_GARROTE);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_HE_GOUGE_DMG_STUN);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MARK_OF_ANGUISH_MAIN);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MARK_OF_ANGUISH_TRANSFER);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SHADOW_WEAKNESS_AURA);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SHADOW_WEAKNESS);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DEBILITATION);
-                }
-
-                _EnterEvadeMode();
-            }
-
-            void JustReachedHome()
-            {
-                me->ClearUnitState(UNIT_STATE_EVADE);
-
-                _JustReachedHome();
-            }
-
-            void JustDied(Unit* killer)
-            {
-                _JustDied();
-            }
-
-            // Used to signal event done.
-            void FinishEvent()
-            {
-                summons.DespawnAll();
-
-                me->RemoveAllAuras();
-                me->RemoveAllAreaTriggers();
-                me->DeleteThreatList();
-                me->CombatStop(true);
-                me->setFaction(35);
-                me->SetFullHealth();
-
-                eventComplete = true;
-
-                me->GetMotionMaster()->MovementExpired();
-                me->GetMotionMaster()->MoveTargetedHome();
-
-                if (instance)
-                {
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_HE_GARROTE);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_HE_GOUGE_DMG_STUN);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MARK_OF_ANGUISH_MAIN);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MARK_OF_ANGUISH_TRANSFER);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SHADOW_WEAKNESS_AURA);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SHADOW_WEAKNESS);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DEBILITATION);
-                }
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                // if (instance && instance->IsWipe())
-                // {
-                //     EnterEvadeMode();
-                //     return;
-                // }
-
-                // Schedule Desperate Measures phase entrance.
-                if (me->HealthBelowPct(67) && !doneDesperateMeasuresPhase ||  me->HealthBelowPct(34) && !doneDesperateMeasuresPhase2)
-                {
-                    events.ScheduleEvent(EVENT_HE_DESPERATE_MEASURES, 500);
-                    if (!doneDesperateMeasuresPhase)
-                        doneDesperateMeasuresPhase = true;
-                    else
-                        doneDesperateMeasuresPhase2 = true;
-                }
-
-                // Schedule Desperate Measures phase exit.
-                if ((doneDesperateMeasuresPhase || doneDesperateMeasuresPhase2) && !me->FindNearestCreature(NPC_EMBODIED_ANGUISH, 300.0f, true))
-                {
-                    if (me->HasAura(SPELL_MARK_OF_ANGUISH_VISUAL))
-                    {
-                        if (!me->GetMap()->IsHeroic())
-                            me->RemoveAurasDueToSpell(SPELL_ROOT_GENERIC);
-                        me->RemoveAurasDueToSpell(SPELL_MARK_OF_ANGUISH_VISUAL);
-
-                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-
-                        // Reschedule the normal events.
-				        events.ScheduleEvent(EVENT_HE_GARROTE, 15000);
-				        events.ScheduleEvent(EVENT_HE_GOUGE, 23000);
-
-                        // On Normal difficulty needs reschedule.
-                        if (!me->GetMap()->IsHeroic())
-                            events.ScheduleEvent(EVENT_HE_POISON_DAGGERS, 45000);
-                    }
-                }
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_HE_GARROTE:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_FARTHEST, 0, 50.0f, true))
-                                DoCast(target, SPELL_SHADOWSTEP);
-				            events.ScheduleEvent(EVENT_HE_GARROTE, me->GetMap()->IsHeroic() ? urand(20000, 26000) : urand(30000, 46000));
-                            break;
-
-                        case EVENT_HE_GOUGE:
-                            Talk(HE_ANNOUNCE_GOUGE, me->getVictim()->GetGUID());
-                            DoCast(me->getVictim(), SPELL_HE_GOUGE);
-				            events.ScheduleEvent(EVENT_HE_GOUGE, urand(30000, 41000));
-                            break;
-
-                        case EVENT_HE_POISON_DAGGERS:
-                            if (!me->HasAura(SPELL_INSTANT_POISON) && !me->HasAura(SPELL_NOXIOUS_POISON)) // First cast, no poison selected yet, select random one.
-                            {
-                                if (uint32 poisonChoice = urand(0, 1))
-                                {
-                                    if (poisonChoice == 0)   // Instant Poison selected.
-                                    {
-                                        Talk(HE_ANNOUNCE_INSTANT_POISON);
-                                        DoCast(me, SPELL_INSTANT_POISON);
-                                    }
-                                    else                     // Noxious Poison selected.
-                                    {
-                                        Talk(HE_ANNOUNCE_NOXIOUS_POISON);
-                                        DoCast(me, SPELL_NOXIOUS_POISON);
-                                    }
-                                }
-                            }
-                            else if (me->HasAura(SPELL_INSTANT_POISON))                                   // Has Instant Poison, select Noxious Poison.
-                            {
-                                Talk(HE_ANNOUNCE_NOXIOUS_POISON);
-                                DoCast(me, SPELL_NOXIOUS_POISON);
-                            }
-                            else                                                                          // Has Noxious Poison, select Instant Poison.
-                            {
-                                Talk(HE_ANNOUNCE_INSTANT_POISON);
-                                DoCast(me, SPELL_INSTANT_POISON);
-                            }
-				            events.ScheduleEvent(EVENT_HE_POISON_DAGGERS, 46000);
-                            break;
-
-                        case EVENT_HE_DESPERATE_MEASURES:
-                            Talk(HE_SAY_DESPERATE_MEASURES);
-                            Talk(HE_ANNOUNCE_MARK_OF_ANGUISH);
-
-                            // Remove Garrote effect from players and Noxious Poison trigger aura from boss.
-                            me->RemoveAurasDueToSpell(SPELL_NOXIOUS_POISON);
-                            if (instance)
-                                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_HE_GARROTE);
-
-                            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-
-                            // Cancel the normal events.
-				            events.CancelEvent(EVENT_HE_GARROTE);
-				            events.CancelEvent(EVENT_HE_GOUGE);
-
-                            // On Normal difficulty Master Poisoner abilities are not cast during this phase.
-                            if (!me->GetMap()->IsHeroic())
-                            {
-                                events.CancelEvent(EVENT_HE_POISON_DAGGERS);
-                                me->AddAura(SPELL_ROOT_GENERIC, me);
-                            }
-
-                            me->AddAura(SPELL_MARK_OF_ANGUISH_VISUAL, me);
-
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                            {
-                                if (Creature* anguish = me->SummonCreature(NPC_EMBODIED_ANGUISH, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 0.0f, TEMPSUMMON_CORPSE_DESPAWN, 1000))
-                                {
-                                    anguish->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
-                                    anguish->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
-                                    anguish->AI()->AttackStart(target);
-                                    anguish->CastSpell(target, SPELL_MARK_OF_ANGUISH, false);
-                                }
-                            }
-                            break;
-
-                        case EVENT_CHECK_BOND_OF_THE_GOLDEN_LOTUS:
-                            if (me->HealthBelowPct(100) && !eventComplete)
-                            {
-                                Talk(HE_ANNOUNCE_BOND_LOTUS);
-                                DoCast(me, SPELL_BOND_OF_THE_GOLDEN_LOTUS);
-                                events.ScheduleEvent(EVENT_CHECK_BOND_OF_THE_GOLDEN_LOTUS, 16000);
-                            }
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                // He does not melee in Desperate Measures phases.
-                if (!me->HasAura(SPELL_MARK_OF_ANGUISH_VISUAL))
-                    DoMeleeAttackIfReady();
-            }
-        };
-
         CreatureAI* GetAI(Creature* creature) const
         {
             return new boss_he_softfootAI(creature);
         }
+
+        struct boss_he_softfootAI : public fallen_protectorAI
+        {
+            boss_he_softfootAI(Creature* creature) : fallen_protectorAI(creature) { }
+
+            ObjectGuid m_MainTargetGUID = ObjectGuid::Empty;
+            ObjectGuid m_FixateTargetGUID = ObjectGuid::Empty;
+
+            void Reset() override
+            {
+                fallen_protectorAI::Reset();
+                me->RemoveAllAreaTriggers();
+            }
+
+            void EnterCombat(Unit* attacker) override
+            {
+                _EnterCombat();
+                events.ScheduleEvent(EVENT_GOUGE, 25000);
+                events.ScheduleEvent(EVENT_SHADOWSTEP, 9000);
+                events.ScheduleEvent(EVENT_POISON, urand(5000, 15000));
+            }
+
+            void AttackStart(Unit* p_Victim) override
+            {
+                if (m_FixateTargetGUID != ObjectGuid::Empty && p_Victim->GetGUID() != m_FixateTargetGUID)
+                {
+                    m_FixateTargetGUID = ObjectGuid::Empty;
+                    me->InterruptSpell(CURRENT_CHANNELED_SPELL);
+                }
+
+                ScriptedAI::AttackStart(p_Victim);
+            }
+
+            void SetGUID(ObjectGuid p_Guid, int32 p_Id) override
+            {
+                if (p_Id == Guids::GUID_FIXATE_TARGET)
+                    m_FixateTargetGUID = p_Guid;
+            }
+
+            void JustDied(Unit* who) override
+            {
+                _JustDied();
+            }
+
+            void DoAction(const int32 p_Action) override
+            {
+                if (p_Action == Actions::ACTION_PREPARE_SHADOWSTEP_BACK)
+                    events.ScheduleEvent(EVENT_SHADOWSTEP_BACK, 1000);
+            }
+
+            void _Update(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                if (CheckPhase())
+                {
+                    return;
+                }
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                if (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_BOND_OF_GOLDEN_LOTUS_END:
+                            SetCastingLowHealth(false);
+                            break;
+                        case EVENT_GOUGE:
+                            DoCastVictim(SPELL_GOUGE);
+                            events.ScheduleEvent(EVENT_GOUGE, 30000);
+                            break;
+                        case EVENT_SHADOWSTEP:
+                            DoCast(SelectTarget(SELECT_TARGET_RANDOM, 0, [&](Unit const* p_Target) -> bool
+                            {
+                                return p_Target->IsPlayer() && p_Target != me->GetVictim() && !p_Target->HasAura(Spells::SPELL_GARROTE);
+                            }), SPELL_SHADOWSTEP_DUMMY);
+                            events.ScheduleEvent(EVENT_SHADOWSTEP, 30000);
+                            break;
+                        case EVENT_SHADOWSTEP_BACK:
+                            if (auto l_Victim = me->GetVictim())
+                            {
+                                m_MainTargetGUID = l_Victim->GetGUID();
+                                DoCast(l_Victim, Spells::SPELL_SHADOWSTEP_BACK, true);
+                                me->SetReactState(ReactStates::REACT_PASSIVE);
+                                me->AttackStop();
+
+                                events.ScheduleEvent(EVENT_RESET_REACT_STATE, 3000);
+                            }
+                            break;
+                        case EVENT_RESET_REACT_STATE:
+                            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+
+                            if (auto l_OldVictim = ObjectAccessor::GetUnit(*me, m_MainTargetGUID))
+                                AttackStart(l_OldVictim);
+
+                            m_MainTargetGUID = ObjectGuid::Empty;
+                            break;
+                        case EVENT_POISON:
+                            UsePoisons();
+                            break;
+                        case EVENT_AGGRO:
+                            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                            events.ScheduleEvent(EVENT_SHADOWSTEP, 800);
+                            events.ScheduleEvent(EVENT_GOUGE, 23000);
+                            events.ScheduleEvent(EVENT_POISON, urand(5000, 15000));
+                            break;
+                        default:
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+
+        protected:
+
+            virtual void DoFirstAggro() override
+            {
+                Talk(SAY_HE_AGGRO);
+            }
+
+            virtual void DoBoundOfGoldenLotus() override
+            {
+                Talk(SAY_HE_LOTUS);
+            }
+
+            virtual void DoBeginMeasures() override
+            {
+                Talk(SAY_HE_MEASURES);
+
+                me->RemoveAreaTrigger(SPELL_NOXIOUS_POISON_AREATRIGGER);
+
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_GARROTE);
+
+                me->RemoveAura(SPELL_NOXIOUS_POISON);
+                me->RemoveAura(SPELL_INSTANT_POISON);
+
+                events.CancelEvent(EVENT_GOUGE);
+                events.CancelEvent(EVENT_SHADOWSTEP);
+                events.CancelEvent(EVENT_POISON);
+
+                me->CastSpell(me, SPELL_MARK_OF_ANGUISH_AURA_1, true);
+
+                if (Creature* pAnguish = me->SummonCreature(NPC_EMBODIED_ANGUISH, embodiedStonetoePos[0]))
+                {
+                    AddMeasureNpc(pAnguish->GetEntry());
+                    pAnguish->GetMotionMaster()->MoveJump(embodiedStonetoePos[3].GetPositionX(), embodiedStonetoePos[3].GetPositionY(), embodiedStonetoePos[3].GetPositionZ() + 0.1f, 40.0f, 20.0f, embodiedStonetoePos[3].GetOrientation());
+                }
+            }
+
+            virtual void DoEndMeasures() override
+            {
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MARK_OF_ANGUISH_AURA_2);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SHADOW_WEAKNESS_DEBUFF);
+
+                me->RemoveAura(SPELL_MARK_OF_ANGUISH_AURA_1);
+
+                me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
+                me->SetReactState(ReactStates::REACT_PASSIVE);
+                events.ScheduleEvent(Events::EVENT_AGGRO, 5000);
+            }
+
+            virtual void OtherBossBeginsMeasures() override
+            {
+                if (!IsHeroic())
+                {
+                    me->RemoveAura(SPELL_NOXIOUS_POISON);
+                    me->RemoveAura(SPELL_INSTANT_POISON);
+                }
+            }
+
+            virtual void OtherBossEndsMeasures() override
+            {
+                if (!IsHeroic())
+                {
+                    UsePoisons();
+                }
+            }
+
+        private:
+
+            void UsePoisons()
+            {
+                uint32 nextPoisonSpell = urand(0, 1) ? SPELL_INSTANT_POISON : SPELL_NOXIOUS_POISON;
+                uint32 previousPoisonSpell = nextPoisonSpell == SPELL_INSTANT_POISON ? SPELL_NOXIOUS_POISON : SPELL_INSTANT_POISON;
+
+                DoCast(me, nextPoisonSpell);
+                me->RemoveAura(previousPoisonSpell);
+            }
+        };
 };
 
-// Sun Tenderheart 71480.
 class boss_sun_tenderheart : public CreatureScript
 {
     public:
         boss_sun_tenderheart() : CreatureScript("boss_sun_tenderheart") { }
 
-        struct boss_sun_tenderheartAI : public BossAI
-        {
-            boss_sun_tenderheartAI(Creature* creature) : BossAI(creature, DATA_FALLEN_PROTECTORS_EVENT), summons(me)
-            {
-                instance  = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            SummonList summons;
-            EventMap events;
-            bool doneDesperateMeasuresPhase, doneDesperateMeasuresPhase2;
-            bool lotusScheduled, eventComplete;
-
-            void Reset()
-            {
-                events.Reset();
-                summons.DespawnAll();
-
-                doneDesperateMeasuresPhase  = false;
-                doneDesperateMeasuresPhase2 = false;
-
-                lotusScheduled = false;
-                eventComplete  = false;
-
-                _Reset();
-            }
-
-            void EnterCombat(Unit* who)
-            {
-                if (Creature* rookStonetoe = me->FindNearestCreature(BOSS_ROOK_STONETOE, 300.0f, true))
-                    if (!rookStonetoe->isInCombat())
-                        rookStonetoe->AI()->DoZoneInCombat();
-                if (Creature* heSoftfoot = me->FindNearestCreature(BOSS_HE_SOFTFOOT, 300.0f, true))
-                    if (!heSoftfoot->isInCombat())
-                        heSoftfoot->AI()->DoZoneInCombat();
-
-                Talk(SUN_SAY_AGGRO);
-
-				events.ScheduleEvent(EVENT_SUN_SHA_SHEAR, 2000);
-				events.ScheduleEvent(EVENT_SUN_SHADOW_WORD_BANE, 15000);
-				events.ScheduleEvent(EVENT_SUN_CALAMITY, 31000);
-
-                _EnterCombat();
-            }
-
-            void DamageTaken(Unit* doneBy, uint32 &uiDamage)
-            {
-                if (uiDamage >= me->GetHealth())
-                {
-                    if (!eventComplete)
-                    {
-                        uiDamage = 0;
-                        me->SetHealth(1);
-                    }
-
-                    if (!lotusScheduled)
-                    {
-                        Talk(SUN_SAY_BOND_LOTUS);
-                        Talk(SUN_ANNOUNCE_BOND_LOTUS);
-                        events.ScheduleEvent(EVENT_CHECK_BOND_OF_THE_GOLDEN_LOTUS, 1000);
-                        lotusScheduled = true;
-                    }
-                }
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-                summons.Summon(summon);
-				summon->setActive(true);
-
-				if (me->isInCombat())
-					summon->SetInCombatWithZone();
-            }
-
-            void DespawnSummon(uint32 entry)
-            {
-                std::list<Creature*> summonsList;
-                GetCreatureListWithEntryInGrid(summonsList, me, entry, 200.0f);
-                if (!summonsList.empty())
-                    for (std::list<Creature*>::iterator summs = summonsList.begin(); summs != summonsList.end(); summs++)
-                        (*summs)->DespawnOrUnsummon();
-            }
-
-            void KilledUnit(Unit* victim)
-            {
-                if (victim->GetTypeId() == TYPEID_PLAYER)
-                    Talk(SUN_SAY_KILL);
-            }
-
-            void DoAction(int32 const action)
-            {
-                switch (action)
-                {
-                    case ACTION_EVENT_COMPLETE:
-                        FinishEvent();
-                        break;
-
-                    default: break;
-                }
-            };
-
-			void EnterEvadeMode()
-            {
-                if (me->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE))
-                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-
-                DespawnSummon(NPC_DESPAIR_SPAWN);
-                DespawnSummon(NPC_DESPERATION_SPAWN);
-
-                me->AddUnitState(UNIT_STATE_EVADE);
-
-                me->RemoveAllAuras();
-                me->RemoveAllAreaTriggers();
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(true);
-                me->GetMotionMaster()->MovementExpired();
-                me->GetMotionMaster()->MoveTargetedHome();
-
-                if (instance)
-                {
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SHADOW_WORD_BANE_HIT);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SHADOW_WORD_BANE_JUMP);
-                }
-
-                _EnterEvadeMode();
-            }
-
-            void JustReachedHome()
-            {
-                me->ClearUnitState(UNIT_STATE_EVADE);
-
-                _JustReachedHome();
-            }
-
-            void JustDied(Unit* killer)
-            {
-                _JustDied();
-            }
-
-            // Used to signal event done.
-            void FinishEvent()
-            {
-                Talk(SUN_SAY_EVENT_COMPLETE);
-
-                DespawnSummon(NPC_DESPAIR_SPAWN);
-                DespawnSummon(NPC_DESPERATION_SPAWN);
-
-                summons.DespawnAll();
-
-                me->RemoveAllAuras();
-                me->RemoveAllAreaTriggers();
-                me->DeleteThreatList();
-                me->CombatStop(true);
-                me->setFaction(35);
-                me->SetFullHealth();
-
-                eventComplete = true;
-
-                me->GetMotionMaster()->MovementExpired();
-                me->GetMotionMaster()->MoveTargetedHome();
-
-                if (instance)
-                {
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SHADOW_WORD_BANE_HIT);
-                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SHADOW_WORD_BANE_JUMP);
-                }
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                // if (instance && instance->IsWipe())
-                // {
-                //     Talk(SUN_SAY_WIPE);
-                //     EnterEvadeMode();
-                //     return;
-                // }
-
-                // Schedule Desperate Measures phase entrance.
-                if (me->HealthBelowPct(67) && !doneDesperateMeasuresPhase ||  me->HealthBelowPct(34) && !doneDesperateMeasuresPhase2)
-                {
-                    events.ScheduleEvent(EVENT_SUN_DESPERATE_MEASURES, 500);
-                    if (!doneDesperateMeasuresPhase)
-                        doneDesperateMeasuresPhase = true;
-                    else
-                        doneDesperateMeasuresPhase2 = true;
-                }
-
-                // Schedule Desperate Measures phase exit.
-                if ((doneDesperateMeasuresPhase || doneDesperateMeasuresPhase2) && !me->FindNearestCreature(NPC_EMBODIED_DESPAIR, 300.0f, true) && !me->FindNearestCreature(NPC_EMBODIED_DESPERATION, 300.0f, true))
-                {
-                    if (me->HasAura(SPELL_DARK_MEDITATION_VISUAL))
-                    {
-                        if (!me->GetMap()->IsHeroic())
-                            me->RemoveAurasDueToSpell(SPELL_ROOT_GENERIC);
-                        me->RemoveAurasDueToSpell(SPELL_DARK_MEDITATION_VISUAL);
-                        me->RemoveAurasDueToSpell(SPELL_DARK_MEDITATION);
-                        me->RemoveAllAreaTriggers();
-
-                        // Remove Meditative Field effect from players.
-                        if (instance)
-                            instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DARK_MEDITATION_DMG_RED);
-
-                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-
-                        // Reschedule the normal events.
-				        events.ScheduleEvent(EVENT_SUN_SHA_SHEAR, 2000);
-				        events.ScheduleEvent(EVENT_SUN_SHADOW_WORD_BANE, 15000);
-
-                        // On Normal difficulty Calamity needs reschedule.
-                        if (!me->GetMap()->IsHeroic())
-                            events.ScheduleEvent(EVENT_SUN_CALAMITY, 31000);
-
-                        // On Heroic Meditation Spike is canceled.
-                        if (me->GetMap()->IsHeroic())
-				            events.CancelEvent(EVENT_SUN_MEDITATION_SPIKE);
-                    }
-                }
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_SUN_SHA_SHEAR:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_SHA_SHEAR);
-				            events.ScheduleEvent(EVENT_SUN_SHA_SHEAR, 3000);
-                            break;
-
-                        case EVENT_SUN_SHADOW_WORD_BANE:
-                            DoCast(me, SPELL_SHADOW_WORD_BANE);
-				            events.ScheduleEvent(EVENT_SUN_SHADOW_WORD_BANE, me->GetMap()->IsHeroic() ? urand(13000, 20000) : urand(18000, 25000));
-                            break;
-
-                        case EVENT_SUN_CALAMITY:
-                            Talk(SUN_SAY_CALAMITY);
-                            Talk(SUN_ANNOUNCE_CALAMITY);
-
-                            // Remove Shadow Word : Bane effect from players.
-                            if (instance)
-                                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SHADOW_WORD_BANE_HIT);
-
-                            DoCast(me, SPELL_CALAMITY);
-				            events.ScheduleEvent(EVENT_SUN_CALAMITY, urand(40000, 50000));
-                            break;
-
-                        case EVENT_SUN_DESPERATE_MEASURES:
-                            Talk(SUN_SAY_DESPERATE_MEASURES);
-
-                            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-
-                            // Cancel the normal events.
-				            events.CancelEvent(EVENT_SUN_SHA_SHEAR);
-				            events.CancelEvent(EVENT_SUN_SHADOW_WORD_BANE);
-
-                            // On Normal difficulty Calamity is not cast during this phase.
-                            if (!me->GetMap()->IsHeroic())
-                            {
-                                events.CancelEvent(EVENT_SUN_CALAMITY);
-                                me->AddAura(SPELL_ROOT_GENERIC, me);
-                            }
-
-                            // On Heroic Meditation Spike is scheduled.
-                            if (me->GetMap()->IsHeroic())
-				                events.ScheduleEvent(EVENT_SUN_MEDITATION_SPIKE, urand(4000, 6000));
-
-                            me->AddAura(SPELL_DARK_MEDITATION_VISUAL, me);
-
-                            DoCast(me, SPELL_DARK_MEDITATION);
-
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 20.0f, true))
-                                me->SummonCreature(NPC_EMBODIED_DESPAIR, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), 0.0f, TEMPSUMMON_CORPSE_DESPAWN, 1000);
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 20.0f, true))
-                                me->SummonCreature(NPC_EMBODIED_DESPERATION, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), 0.0f, TEMPSUMMON_CORPSE_DESPAWN, 1000);
-                            break;
-
-                        case EVENT_SUN_MEDITATION_SPIKE: // HEROIC only!
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_MEDITATION_SPIKE_MISSILE);
-				            events.ScheduleEvent(EVENT_SUN_MEDITATION_SPIKE, urand(4000, 6000));
-                            break;
-
-                        case EVENT_CHECK_BOND_OF_THE_GOLDEN_LOTUS:
-                            if (me->HealthBelowPct(100) && !eventComplete)
-                            {
-                                Talk(SUN_ANNOUNCE_BOND_LOTUS);
-                                DoCast(me, SPELL_BOND_OF_THE_GOLDEN_LOTUS);
-                                events.ScheduleEvent(EVENT_CHECK_BOND_OF_THE_GOLDEN_LOTUS, 16000);
-                            }
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                // No melee, no tank needed.
-            }
-        };
-
         CreatureAI* GetAI(Creature* creature) const
         {
             return new boss_sun_tenderheartAI(creature);
         }
-};
 
-/*** Adds (Desperate Measures) ***/
-
-// Embodied Misery 71476.
-class npc_embodied_misery : public CreatureScript
-{
-    public:
-        npc_embodied_misery() : CreatureScript("npc_embodied_misery") { }
-
-        struct npc_embodied_miseryAI : public ScriptedAI
+        struct boss_sun_tenderheartAI : public fallen_protectorAI
         {
-            npc_embodied_miseryAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void Reset() { }
-
-            void EnterCombat(Unit* who)
+            boss_sun_tenderheartAI(Creature* creature) : fallen_protectorAI(creature)
             {
-                events.Reset();
-
-                // On Heroic they share health.
-                if (me->GetMap()->IsHeroic())
-                    me->AddAura(SPELL_SHARED_TORMENT, me);
-
-                events.ScheduleEvent(EVENT_DEFILED_GROUND, 10500);
+                // Enable to interrupt Sha Sear
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_INTERRUPT, false);
             }
 
-            void DamageTaken(Unit* doneBy, uint32 &uiDamage)
+            void Reset() override
             {
-                if (me->GetMap()->IsHeroic())
+                fallen_protectorAI::Reset();
+
+                DespawnCreaturesInArea(NPC_DESPAIR_SPAWN, me);
+                DespawnCreaturesInArea(NPC_DESPERATION_SPAWN, me);
+
+                me->RemoveAllAreaTriggers();
+            }
+
+            void DespawnCreaturesInArea(int entry, Unit* unit)
+            {
+                std::list<Creature*> creatureList = me->FindNearestCreatures(entry, 200);
+                for (Creature* creature : creatureList)
                 {
-                    if (Creature* sorrow = me->FindNearestCreature(NPC_EMBODIED_SORROW, 200.0f, true))
-                        sorrow->SetHealth(me->GetHealth());
-                    if (Creature* gloom = me->FindNearestCreature(NPC_EMBODIED_GLOOM, 200.0f, true))
-                        gloom->SetHealth(me->GetHealth());
+                    if (me->GetAreaId() == creature->GetAreaId())
+                        creature->ForcedDespawn();
                 }
             }
 
-            void UpdateAI(uint32 const diff)
+            void EnterCombat(Unit* attacker) override
             {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
+                _EnterCombat();
+                events.ScheduleEvent(EVENT_SHA_SEAR, urand(500, 2000));
+                events.ScheduleEvent(EVENT_SHADOW_WORD_BANE, 15000);
+                events.ScheduleEvent(EVENT_CALAMITY, 31000);
+            }
+
+            void AttackStart(Unit* who) override
+            {
+                if (me->Attack(who, true))
+                    DoStartNoMovement(who);
+            }
+
+            void KilledUnit(Unit* who) override
+            {
+                if (who->IsPlayer())
+                    Talk(SAY_SUN_KILL);
+            }
+
+            void JustDied(Unit* who) override
+            {
+                _JustDied();
+                Talk(SAY_SUN_DEATH);
+                DespawnCreaturesInArea(NPC_DESPAIR_SPAWN, me);
+                DespawnCreaturesInArea(NPC_DESPERATION_SPAWN, me);
+                me->RemoveAllAreaTriggers();
+            }
+
+            void _Update(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                if (CheckPhase())
                     return;
 
                 events.Update(diff);
 
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_DEFILED_GROUND:
-                            DoCast(me, SPELL_DEFILED_GROUND);
-                            events.ScheduleEvent(EVENT_DEFILED_GROUND, 10500);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_embodied_miseryAI(creature);
-        }
-};
-
-// Embodied Sorrow 71481.
-class npc_embodied_sorrow : public CreatureScript
-{
-    public:
-        npc_embodied_sorrow() : CreatureScript("npc_embodied_sorrow") { }
-
-        struct npc_embodied_sorrowAI : public ScriptedAI
-        {
-            npc_embodied_sorrowAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void Reset() { }
-
-            void EnterCombat(Unit* who)
-            {
-                events.Reset();
-
-                // On Heroic they share health.
-                if (me->GetMap()->IsHeroic())
-                    me->AddAura(SPELL_SHARED_TORMENT, me);
-
-                events.ScheduleEvent(EVENT_INFERNO_STRIKE, 9500);
-            }
-
-            void DamageTaken(Unit* doneBy, uint32 &uiDamage)
-            {
-                if (me->GetMap()->IsHeroic())
-                {
-                    if (Creature* misery = me->FindNearestCreature(NPC_EMBODIED_MISERY, 200.0f, true))
-                        misery->SetHealth(me->GetHealth());
-                    if (Creature* gloom = me->FindNearestCreature(NPC_EMBODIED_GLOOM, 200.0f, true))
-                        gloom->SetHealth(me->GetHealth());
-                }
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_INFERNO_STRIKE:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                                DoCast(target, SPELL_INFERNO_STRIKE);
-                            events.ScheduleEvent(EVENT_INFERNO_STRIKE, 9500);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_embodied_sorrowAI(creature);
-        }
-};
-
-// Embodied Gloom 71477.
-class npc_embodied_gloom : public CreatureScript
-{
-    public:
-        npc_embodied_gloom() : CreatureScript("npc_embodied_gloom") { }
-
-        struct npc_embodied_gloomAI : public ScriptedAI
-        {
-            npc_embodied_gloomAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void Reset() { }
-
-            void EnterCombat(Unit* who)
-            {
-                events.Reset();
-
-                // On Heroic they share health.
-                if (me->GetMap()->IsHeroic())
-                    me->AddAura(SPELL_SHARED_TORMENT, me);
-
-                events.ScheduleEvent(EVENT_CORRUPTION_SHOCK_CHAIN, 15000);
-            }
-
-            void DamageTaken(Unit* doneBy, uint32 &uiDamage)
-            {
-                if (me->GetMap()->IsHeroic())
-                {
-                    if (Creature* misery = me->FindNearestCreature(NPC_EMBODIED_MISERY, 200.0f, true))
-                        misery->SetHealth(me->GetHealth());
-                    if (Creature* sorrow = me->FindNearestCreature(NPC_EMBODIED_SORROW, 200.0f, true))
-                        sorrow->SetHealth(me->GetHealth());
-                }
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_CORRUPTION_SHOCK_CHAIN:
-                            if (!me->GetMap()->IsHeroic()) // Corruption Shock on Normal.
-                                DoCast(me, SPELL_CORRUPTION_SHOCK);
-                            else                           // Corruption Chain on Heroic.
-                            {
-                                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                                    DoCast(target, SPELL_CORRUPTION_CHAIN);
-                            }
-                            events.ScheduleEvent(EVENT_CORRUPTION_SHOCK_CHAIN, 15000);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_embodied_gloomAI(creature);
-        }
-};
-
-// Embodied Anguish 71478.
-class npc_embodied_anguish : public CreatureScript
-{
-    public:
-        npc_embodied_anguish() : CreatureScript("npc_embodied_anguish") { }
-
-        struct npc_embodied_anguishAI : public ScriptedAI
-        {
-            npc_embodied_anguishAI(Creature* creature) : ScriptedAI(creature) { }
-
-            void Reset() { }
-
-            void EnterCombat(Unit* who)
-            {
-                me->AddAura(SPELL_SHADOW_WEAKNESS_AURA, me);
-            }
-
-            void DamageDealt(Unit* victim, uint32& /*damage*/, DamageEffectType damageType)
-            {
-                // Add a stack of Shadow Weakness to the victim on melee attack.
-                if (damageType == DIRECT_DAMAGE)
-                    me->AddAura(SPELL_SHADOW_WEAKNESS, victim);
-            }
-
-            void KilledUnit(Unit* victim)
-            {
-                // Embodied Anguish's gaze moves to a random target upon killing his current target. 
-                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                    me->AI()->AttackStart(target);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_embodied_anguishAI(creature);
-        }
-};
-
-// Embodied Despair 71474.
-class npc_embodied_despair : public CreatureScript
-{
-    public:
-        npc_embodied_despair() : CreatureScript("npc_embodied_despair") { }
-
-        struct npc_embodied_despairAI : public ScriptedAI
-        {
-            npc_embodied_despairAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void Reset() { }
-
-            void EnterCombat(Unit* who)
-            {
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                events.Reset();
-                events.ScheduleEvent(EVENT_MANIFEST_DESPAIR, 3000);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
 
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
+                if (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
-                        case EVENT_MANIFEST_DESPAIR:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                                DoCast(target, SPELL_MANIFEST_DESPAIR);
-                            events.ScheduleEvent(EVENT_MANIFEST_DESPAIR, urand(5000, 7000));
+                        case EVENT_BOND_OF_GOLDEN_LOTUS_END:
+                            SetCastingLowHealth(false);
                             break;
-
-                        default: break;
+                        case EVENT_SHA_SEAR:
+                            DoCastAOE(SPELL_SHA_SEAR);
+                            events.ScheduleEvent(EVENT_SHA_SEAR, urand(5000, 7000));
+                            break;
+                        case EVENT_SHADOW_WORD_BANE:
+                            DoCastAOE(SPELL_SHADOW_WORD_BANE);
+                            events.ScheduleEvent(EVENT_SHADOW_WORD_BANE, 25000);
+                            break;
+                        case EVENT_CALAMITY:
+                            DoCalamity();
+                            events.ScheduleEvent(EVENT_CALAMITY, 39000);
+                            break;
+                        case EVENT_DARK_MEDITATION:
+                            DarkMeditation();
+                            break;
+                        case EVENT_DARK_MEDITATION_DMG:
+                            DoCastAOE(SPELL_DARK_MEDITATION_DMG, true);
+                            events.ScheduleEvent(EVENT_DARK_MEDITATION_DMG, 500);
+                            break;
+                        case EVENT_AGGRO:
+                            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                            events.ScheduleEvent(EVENT_SHA_SEAR, urand(1000, 3000));
+                            events.ScheduleEvent(EVENT_SHADOW_WORD_BANE, 10000);
+                            events.ScheduleEvent(EVENT_CALAMITY, urand(2000, 39000));
+                            break;
+                        default:
+                            break;
                     }
                 }
+            }
 
-                // No melee.
+        protected:
+
+            void DoCalamity()
+            {
+                Talk(SAY_SUN_CALAMITY);
+
+                 DoCastAOE(SPELL_CALAMITY);
+
+                 IncreaseAbilityCount();
+            }
+
+            virtual void DoFirstAggro() override
+            {
+                Talk(SAY_SUN_AGGRO);
+            }
+
+            virtual void DoBoundOfGoldenLotus() override
+            {
+                Talk(SAY_SUN_LOTUS);
+            }
+
+            virtual void DoBeginMeasures() override
+            {
+                events.CancelEvent(EVENT_SHA_SEAR);
+                events.CancelEvent(EVENT_CALAMITY);
+                events.CancelEvent(EVENT_SHADOW_WORD_BANE);
+
+                events.ScheduleEvent(EVENT_DARK_MEDITATION, 1);
+            }
+
+            virtual void DoEndMeasures() override
+            {
+                events.CancelEvent(EVENT_DARK_MEDITATION_DMG);
+
+                me->RemoveAura(SPELL_DARK_MEDITATION_DUMMY_2);
+                me->RemoveAura(SPELL_DARK_MEDITATION_AREATRIGGER);
+                me->RemoveAreaTrigger(SPELL_DARK_MEDITATION_AREATRIGGER);
+
+                me->SetReactState(ReactStates::REACT_PASSIVE);
+                events.ScheduleEvent(Events::EVENT_AGGRO, 5000);
+            }
+
+            virtual void OtherBossBeginsMeasures() override
+            {
+                if (!IsHeroic())
+                    events.PauseEvent(EVENT_CALAMITY);
+            }
+
+            virtual void OtherBossEndsMeasures() override
+            {
+                if (!IsHeroic())
+                    events.ContinueEvent(EVENT_CALAMITY);
+            }
+
+            void DarkMeditation()
+            {
+                Talk(SAY_SUN_MEASURES);
+
+                me->AddAura(SPELL_DARK_MEDITATION_DUMMY_2, me);
+                DoCast(me, SPELL_DARK_MEDITATION_AREATRIGGER);
+
+                if (Creature* pDespair = me->SummonCreature(NPC_EMBODIED_DESPAIR, embodiedDespairPos, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 1000))
+                    AddMeasureNpc(pDespair->GetEntry());
+
+                if (Creature* pDesperation = me->SummonCreature(NPC_EMBODIED_DESPERATION, embodiedDesperationPos, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 1000))
+                    AddMeasureNpc(pDesperation->GetEntry());
+
+                events.ScheduleEvent(EVENT_DARK_MEDITATION_DMG, 500);
             }
         };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_embodied_despairAI(creature);
-        }
 };
 
-// Embodied Desperation 71482.
-class npc_embodied_desperation : public CreatureScript
+/// Embodied Misery - 71476, Embodied Sorrow - 71481, Embodied Gloom - 71477
+struct rook_stonetoe_embodiedAI : public ScriptedAI
 {
-    public:
-        npc_embodied_desperation() : CreatureScript("npc_embodied_desperation") { }
+    rook_stonetoe_embodiedAI(Creature* p_Creature) : ScriptedAI(p_Creature)
+    {
+        //ApplyAllImmunities(true);
+        me->SetReactState(REACT_PASSIVE);
 
-        struct npc_embodied_desperationAI : public ScriptedAI
+        m_Instance = p_Creature->GetInstanceScript();
+    }
+
+    InstanceScript* m_Instance = nullptr;
+
+    void Reset() override
+    {
+        events.Reset();
+    }
+
+    void MovementInform(uint32 p_Type, uint32 p_Id) override
+    {
+        if (p_Type == MovementGeneratorType::EFFECT_MOTION_TYPE && p_Id == EventId::EVENT_JUMP)
         {
-            npc_embodied_desperationAI(Creature* creature) : ScriptedAI(creature) { }
+            events.ScheduleEvent(EVENT_AGGRO, 4000);
 
-            EventMap events;
+            if (IsHeroic())
+                DoCastAOE(Spells::SPELL_SHARED_TORMENT, true);
+        }
+    }
 
-            void Reset() { }
+    void EnterCombat(Unit* p_Who) override
+    {
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(EncounterFrameType::ENCOUNTER_FRAME_ENGAGE, me);
 
-            void EnterCombat(Unit* who)
+        ScriptedAI::EnterCombat(p_Who);
+    }
+
+    void JustDied(Unit* /*p_Killer*/) override
+    {
+        events.Reset();
+        me->DespawnOrUnsummon(1000);
+
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+    }
+
+    void UpdateAI(const uint32 p_Diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        events.Update(p_Diff);
+
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+
+        _Update(p_Diff);
+    }
+
+protected:
+    virtual void _Update(uint32 p_Diff) { }
+};
+
+/// Embodied Misery - 71476
+struct npc_rook_stonetoe_embodied_misery : public rook_stonetoe_embodiedAI
+{
+    npc_rook_stonetoe_embodied_misery(Creature* p_Creature) : rook_stonetoe_embodiedAI(p_Creature) { }
+
+    void _Update(uint32 p_Diff) override
+    {
+        if (uint32 l_EventId = events.ExecuteEvent())
+        {
+            switch (l_EventId)
             {
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                events.Reset();
-                events.ScheduleEvent(EVENT_MANIFEST_DESPERATION, 3000);
+                case EVENT_AGGRO:
+                    me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                    events.ScheduleEvent(Events::EVENT_DEFILED_GROUND, 3000);
+                    break;
+                case EVENT_DEFILED_GROUND:
+                    DoCastVictim(Spells::SPELL_DEFILED_GROUND);
+                    events.ScheduleEvent(Events::EVENT_DEFILED_GROUND, 10500);
+                    break;
             }
+        }
 
-            void UpdateAI(uint32 const diff)
+        DoMeleeAttackIfReady();
+    }
+};
+
+/// Embodied Sorrow - 71481
+struct npc_rook_stonetoe_embodied_sorrow : public rook_stonetoe_embodiedAI
+{
+    npc_rook_stonetoe_embodied_sorrow(Creature* p_Creature) : rook_stonetoe_embodiedAI(p_Creature) { }
+
+    void _Update(uint32 p_Diff) override
+    {
+        if (uint32 l_EventId = events.ExecuteEvent())
+        {
+            switch (l_EventId)
             {
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
+                case EVENT_AGGRO:
+                    me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                    events.ScheduleEvent(Events::EVENT_INFERNO_STRIKE, 2000);
+                    break;
+                case EVENT_INFERNO_STRIKE:
+                    if (auto l_Target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                        DoCast(l_Target, Spells::SPELL_INFERNO_STRIKE);
 
-                events.Update(diff);
+                    events.ScheduleEvent(Events::EVENT_INFERNO_STRIKE, 10000);
+                    break;
+            }
+        }
+    }
+};
 
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
+/// Embodied Gloom - 71477
+struct npc_rook_stonetoe_embodied_gloom : public rook_stonetoe_embodiedAI
+{
+    npc_rook_stonetoe_embodied_gloom(Creature* p_Creature) : rook_stonetoe_embodiedAI(p_Creature)
+    {
+        p_Creature->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_INTERRUPT, false);
+    }
+
+    void _Update(uint32 p_Diff) override
+    {
+        if (uint32 l_EventId = events.ExecuteEvent())
+        {
+            switch (l_EventId)
+            {
+                case EVENT_AGGRO:
+                    me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                    events.ScheduleEvent(Events::EVENT_CORRUPTION_SHOCK, 1000);
+                    break;
+                case EVENT_CORRUPTION_SHOCK:
+                    me->CastCustomSpell(Spells::SPELL_CORRUPTION_SHOCK_AOE, SpellValueMod::SPELLVALUE_MAX_TARGETS, Is25ManRaid() ? 5 : 2, nullptr, true);
+                    events.ScheduleEvent(Events::EVENT_CORRUPTION_SHOCK, urand(3000, 5000));
+                    break;
+            }
+        }
+    }
+};
+
+/// Embodied Anguish - 71478
+struct npc_he_softfoot_embodied_anguish : public ScriptedAI
+{
+    npc_he_softfoot_embodied_anguish(Creature* p_Creature) : ScriptedAI(p_Creature)
+    {
+       //ApplyAllImmunities(true);
+
+        me->ApplySpellImmune(0, SpellImmunity::IMMUNITY_STATE, AuraType::SPELL_AURA_MOD_TAUNT, true);
+        me->ApplySpellImmune(0, SpellImmunity::IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
+
+        me->AddAura(Spells::SPELL_SHADOW_WEAKNESS, me);
+
+        m_Instance = p_Creature->GetInstanceScript();
+        p_Creature->SetReactState(ReactStates::REACT_PASSIVE);
+    }
+
+    InstanceScript* m_Instance = nullptr;
+    ObjectGuid m_TargetGUID = ObjectGuid::Empty;
+    bool m_IsCasting = false;
+
+    void Reset() override
+    {
+        events.Reset();
+        m_TargetGUID = ObjectGuid::Empty;
+    }
+
+    void EnterCombat(Unit* /*p_Who*/) override
+    {
+        events.ScheduleEvent(Events::EVENT_AGGRO, 3000);
+        events.ScheduleEvent(Events::EVENT_MARK_OF_ANGUISH, 0);
+
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(EncounterFrameType::ENCOUNTER_FRAME_ENGAGE, me);
+    }
+
+    void SetGUID(ObjectGuid p_Guid, int32 p_Id) override
+    {
+        if (p_Id == Actions::GUID_MARK_OF_ANGUISH)
+        {
+            // if it is not first targetting
+            if (m_TargetGUID != ObjectGuid::Empty)
+                DoCastAOE(Spells::SPELL_SHADOW_WEAKNESS_AOE, true);
+
+            m_TargetGUID = p_Guid;
+
+            events.CancelEvent(Events::EVENT_CHECK_MARK_OF_ANGUISH_TARGET);
+            events.ScheduleEvent(Events::EVENT_MARK_OF_ANGUISH_TARGET_CHANGED, 500);
+        }
+    }
+
+    void JustDied(Unit* /*p_Killer*/) override
+    {
+        events.Reset();
+        me->DespawnOrUnsummon(1000);
+
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+    }
+
+    void UpdateAI(const uint32 p_Diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        events.Update(p_Diff);
+
+        if (me->HasUnitState(UnitState::UNIT_STATE_CASTING))
+            return;
+
+        if (uint32 l_EventId = events.ExecuteEvent())
+        {
+            switch (l_EventId)
+            {
+                case Events::EVENT_AGGRO:
+                    me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+
+                    if (Player* l_Target = ObjectAccessor::GetPlayer(*me, m_TargetGUID))
                     {
-                        case EVENT_MANIFEST_DESPERATION:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                                DoCast(target, SPELL_MANIFEST_DESPERATION);
-                            events.ScheduleEvent(EVENT_MANIFEST_DESPERATION, urand(5000, 7000));
-                            break;
+                        me->AddThreat(l_Target, 10000000.0f);
+                        me->GetMotionMaster()->MoveChase(l_Target);
+                    }
+                    break;
+                case Events::EVENT_MARK_OF_ANGUISH:
+                    DoCastAOE(Spells::SPELL_MARK_OF_ANGUISH_AOE);
+                    break;
+                case Events::EVENT_MARK_OF_ANGUISH_TARGET_CHANGED:
+                {
+                    me->CastStop();
+                    DoResetThreat();
+                    m_IsCasting = false;
 
-                        default: break;
+                    if (me->GetReactState() != ReactStates::REACT_PASSIVE)
+                    {
+                        if (Player* l_Target = ObjectAccessor::GetPlayer(*me, m_TargetGUID))
+                        {
+                            me->AddThreat(l_Target, 10000000.0f);
+                            me->GetMotionMaster()->MoveChase(l_Target);
+                        }
+                    }
+
+                    events.ScheduleEvent(Events::EVENT_CHECK_MARK_OF_ANGUISH_TARGET, 1000);
+                    break;
+                }
+                case Events::EVENT_CHECK_MARK_OF_ANGUISH_TARGET:
+                {
+                    Player* l_Target = ObjectAccessor::GetPlayer(*me, m_TargetGUID);
+                    if (l_Target == nullptr || !l_Target->IsAlive())
+                    {
+                        m_IsCasting = false;
+                        m_TargetGUID = ObjectGuid::Empty;
+
+                        me->CastStop();
+                        DoResetThreat();
+
+                        events.ScheduleEvent(Events::EVENT_MARK_OF_ANGUISH, 1000);
+                        return;
+                    }
+
+                    if (!m_IsCasting)
+                    {
+                        DoCast(l_Target, Spells::SPELL_MARK_OF_ANGUISH_AURA_2);
+                        me->ClearUnitState(UnitState::UNIT_STATE_CASTING);
+                        m_IsCasting = true;
+                    }
+
+                    events.ScheduleEvent(Events::EVENT_CHECK_MARK_OF_ANGUISH_TARGET, 1000);
+                    break;
+                }
+            }
+        }
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+/// Embodied Despair - 71474, Embodied Desperation - 71482
+struct npc_sun_tenderheart_embodied_AI : public Scripted_NoMovementAI
+{
+    npc_sun_tenderheart_embodied_AI(Creature* p_Creature, uint32 p_SpellId) : Scripted_NoMovementAI(p_Creature), m_Spell(p_SpellId)
+    {
+        //ApplyAllImmunities(true);
+
+        p_Creature->SetReactState(REACT_PASSIVE);
+        m_Instance = p_Creature->GetInstanceScript();
+    }
+
+    uint32 m_Spell = 0;
+    InstanceScript* m_Instance = nullptr;
+
+    void Reset() override
+    {
+        events.Reset();
+        summons.DespawnAll();
+    }
+
+    void IsSummonedBy(Unit* /*p_Owner*/) override
+    {
+        events.ScheduleEvent(EVENT_MANIFEST, 1000);
+        DoCast(me, m_Spell, true);
+        me->AddAura(Spells::SPELL_SPIRIT_BOUND, me);
+    }
+
+    void JustSummoned(Creature* p_Summon) override
+    {
+        summons.Summon(p_Summon);
+
+        if (me->IsInCombat())
+            DoZoneInCombat(p_Summon);
+    }
+
+    void EnterCombat(Unit* /*p_Who*/) override
+    {
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+    }
+
+    void DoAction(const int32 p_Action) override
+    {
+        if (p_Action == Actions::ACTION_SPAWNS_SYNC_HP)
+        {
+            for (auto l_Guid : summons)
+                if (auto l_Summon = ObjectAccessor::GetUnit(*me, l_Guid))
+                    l_Summon->SetHealth(me->GetHealth());
+        }
+    }
+
+    void SummonedCreatureDespawn(Creature* p_Summon) override
+    {
+        summons.Despawn(p_Summon);
+    }
+
+    void JustDied(Unit* /*p_Who*/) override
+    {
+        events.Reset();
+        summons.DespawnAll();
+
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+        me->DespawnOrUnsummon(3000);
+    }
+
+    void UpdateAI(const uint32 p_Diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        events.Update(p_Diff);
+
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+
+        if (uint32 eventId = events.ExecuteEvent())
+        {
+            switch (eventId)
+            {
+                case EVENT_MANIFEST:
+                    DoCast(me, m_Spell);
+                    events.ScheduleEvent(EVENT_MANIFEST, 9000);
+                    break;
+            }
+        }
+    }
+};
+
+/// Embodied Despair - 71474
+struct npc_sun_tenderheart_embodied_despair : public npc_sun_tenderheart_embodied_AI
+{
+    npc_sun_tenderheart_embodied_despair(Creature* p_Creature) : npc_sun_tenderheart_embodied_AI(p_Creature, Spells::SPELL_MANIFEST_DESPAIR) { }
+};
+
+/// Embodied Desperation - 71482
+struct npc_sun_tenderheart_embodied_desperation : public npc_sun_tenderheart_embodied_AI
+{
+    npc_sun_tenderheart_embodied_desperation(Creature* p_Creature) : npc_sun_tenderheart_embodied_AI(p_Creature, Spells::SPELL_MANIFEST_DESPERATION) { }
+};
+
+/// Despair Spawn - 71712, Desperation Spawn - 71993
+struct npc_sun_tenderheart_spawn : public ScriptedAI
+{
+    npc_sun_tenderheart_spawn(Creature* p_Creature) : ScriptedAI(p_Creature)
+    {
+        //ApplyAllImmunities(true);
+        p_Creature->SetReactState(ReactStates::REACT_PASSIVE);
+    }
+
+    enum eSpells
+    {
+        SpiritBound = 143723
+    };
+
+    void Reset()
+    {
+        events.Reset();
+    }
+
+    void IsSummonedBy(Unit* p_Owner) override
+    {
+        me->SetHealth(p_Owner->GetHealth());
+        p_Owner->CastSpell(me, eSpells::SpiritBound, true);
+        events.ScheduleEvent(Events::EVENT_AGGRO, 2000);
+    }
+
+    void JustDied(Unit* /*p_Who*/)
+    {
+        events.Reset();
+        summons.DespawnAll();
+
+        me->DespawnOrUnsummon(3000);
+    }
+
+    void UpdateAI(const uint32 p_Diff)
+    {
+        if (!UpdateVictim())
+            return;
+
+        events.Update(p_Diff);
+
+        if (uint32 l_EventId = events.ExecuteEvent())
+        {
+            switch (l_EventId)
+            {
+                case Events::EVENT_AGGRO:
+                    me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                    break;
+            }
+        }
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+class spell_sun_tenderheart_calamity : public SpellScriptLoader
+{
+    public:
+        spell_sun_tenderheart_calamity() : SpellScriptLoader("spell_sun_tenderheart_calamity") { }
+
+        class spell_sun_tenderheart_calamity_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_sun_tenderheart_calamity_SpellScript);
+
+            void HandleDummy(SpellEffIndex effIndex)
+            {
+                if (!GetCaster() || !GetHitUnit())
+                    return;
+
+                GetHitUnit()->RemoveAura(SPELL_SHADOW_WORD_BANE_DMG);
+
+                if (int32 dmg = GetCalamityDmg(GetCaster()))
+                {
+                    GetCaster()->CastCustomSpell(GetHitUnit(), SPELL_CALAMITY_DMG, &dmg, nullptr, true);
+                }
+            }
+
+            void Register()
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_sun_tenderheart_calamity_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+            }
+
+        private:
+
+            int32 GetCalamityDmg(Unit* caster)
+            {
+                int32 damage = 30;
+
+                if (Creature* pCreature = caster->ToCreature())
+                {
+                    if (pCreature->GetMap()->IsHeroic())
+                    {
+                        uint32 calamityCount = pCreature->AI()->GetData(DATA_ABILITY_COUNT);
+
+                        // first ability should be with 30 dmg
+                        if (calamityCount > 0)
+                            calamityCount -= 1;
+
+                        damage += 10 * calamityCount;
                     }
                 }
 
-                // No melee.
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_embodied_desperationAI(creature);
-        }
-};
-
-// Despair Spawn 71712.
-class npc_despair_spawn : public CreatureScript
-{
-    public:
-        npc_despair_spawn() : CreatureScript("npc_despair_spawn") { }
-
-        struct npc_despair_spawnAI : public ScriptedAI
-        {
-            npc_despair_spawnAI(Creature* creature) : ScriptedAI(creature) { }
-
-            void DamageTaken(Unit* doneBy, uint32 &uiDamage)
-            {
-                if (Creature* despair = me->FindNearestCreature(NPC_EMBODIED_DESPAIR, 200.0f, true))
-                    despair->SetHealth(despair->GetHealth() - uiDamage);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_despair_spawnAI(creature);
-        }
-};
-
-// Desperation Spawn 71993.
-class npc_desperation_spawn : public CreatureScript
-{
-    public:
-        npc_desperation_spawn() : CreatureScript("npc_desperation_spawn") { }
-
-        struct npc_desperation_spawnAI : public ScriptedAI
-        {
-            npc_desperation_spawnAI(Creature* creature) : ScriptedAI(creature) { }
-
-            void DamageTaken(Unit* doneBy, uint32 &uiDamage)
-            {
-                if (Creature* desperation = me->FindNearestCreature(NPC_EMBODIED_DESPERATION, 200.0f, true))
-                    desperation->SetHealth(desperation->GetHealth() - uiDamage);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_desperation_spawnAI(creature);
-        }
-};
-
-/*** Spells ***/
-
-// Corrupted Brew (Boss cast) 143019.
-class spell_rook_corrupted_brew : public SpellScriptLoader
-{
-    public:
-        spell_rook_corrupted_brew() : SpellScriptLoader("spell_rook_corrupted_brew") { }
-
-        class spell_rook_corrupted_brew_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_rook_corrupted_brew_SpellScript);
-
-            void HandleDummy(SpellEffIndex /*effIndex*/)
-            {
-                Unit* caster = GetCaster();
-
-                if (!caster)
-                    return;
-
-                if (!caster->ToCreature())
-                    return;
-
-                uint32 count = 1; // 10 Normal.
-
-                if (caster->GetMap()->GetDifficulty() == RAID_DIFFICULTY_10MAN_HEROIC)
-                    count = 2;
-                else if (caster->GetMap()->GetDifficulty() == RAID_DIFFICULTY_25MAN_NORMAL)
-                    count = 3;
-                else if (caster->GetMap()->GetDifficulty() == RAID_DIFFICULTY_25MAN_HEROIC)
-                    count = 6;
-
-                std::list<Unit*> targets;
-                caster->ToCreature()->AI()->SelectTargetList(targets, count, SELECT_TARGET_RANDOM, 100.0f, true);
-                if (!targets.empty())
-                    for (std::list<Unit*>::iterator itr = targets.begin(); itr != targets.end(); ++itr)
-                        caster->CastSpell(*itr, SPELL_CORRUPTED_BREW_MISSILE, true);
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_rook_corrupted_brew_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+                return damage;
             }
         };
 
         SpellScript* GetSpellScript() const
         {
-            return new spell_rook_corrupted_brew_SpellScript();
+            return new spell_sun_tenderheart_calamity_SpellScript();
         }
 };
 
-// Clash (Boss cast) 143027.
-class spell_rook_clash : public SpellScriptLoader
+/// Shadow Word: Bane - 143446
+class spell_sun_tenderheart_shadow_word_bane : public SpellScript
+{
+    PrepareSpellScript(spell_sun_tenderheart_shadow_word_bane);
+
+    void HandleDummy(SpellEffIndex /*p_EffIndex*/)
+    {
+        if (auto l_Target = GetHitUnit())
+            GetCaster()->CastSpell(l_Target, SPELL_SHADOW_WORD_BANE_DMG, true);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_sun_tenderheart_shadow_word_bane::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+/// Shadow Word: Bane - 143438
+class spell_sun_tenderheart_shadow_word_bane_aoe : public SpellScript
+{
+    PrepareSpellScript(spell_sun_tenderheart_shadow_word_bane_aoe);
+
+    void CheckTarget(std::list<WorldObject*>& p_Targets)
+    {
+        Unit* l_Target = GetExplTargetUnit();
+        if (l_Target == nullptr)
+            return;
+
+        p_Targets.remove(l_Target);
+        p_Targets.remove_if(Trinity::UnitAuraCheck(true, SPELL_SHADOW_WORD_BANE_DMG));
+
+        if (!p_Targets.empty())
+        {
+            if (auto l_Aura = l_Target->GetAura(SPELL_SHADOW_WORD_BANE_DMG))
+                l_Aura->SetCharges(1);
+
+            //GetSpell()->SetSpellValue(SpellValueMod::SPELLVALUE_BASE_POINT0, GetSpell()->GetSpellValue(SpellValueMod::SPELLVALUE_BASE_POINT0) - 1);
+            GetSpell()->SetSpellValue(SpellValueMod::SPELLVALUE_BASE_POINT0, GetSpellValue()->EffectBasePoints[0] - 1);
+        }
+    }
+
+    void HandleDummy(SpellEffIndex /*p_EffIndex*/)
+    {
+        if (auto l_Target = GetHitUnit())
+            GetCaster()->CastCustomSpell(SPELL_SHADOW_WORD_BANE_DMG, SpellValueMod::SPELLVALUE_BASE_POINT0, GetSpellValue()->EffectBasePoints[0], l_Target);
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_sun_tenderheart_shadow_word_bane_aoe::CheckTarget, EFFECT_0, TARGET_UNIT_DEST_AREA_ENEMY);
+        OnEffectHitTarget += SpellEffectFn(spell_sun_tenderheart_shadow_word_bane_aoe::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+/// Shadow Word: Bane (Main target spell) - 143434
+class spell_sun_tenderheart_shadow_word_bane_dmg : public AuraScript
+{
+    PrepareAuraScript(spell_sun_tenderheart_shadow_word_bane_dmg);
+
+    void OnApply(AuraEffect const* p_AurEff, AuraEffectHandleModes /*p_Mode*/)
+    {
+        GetAura()->SetCharges(p_AurEff->GetAmount());
+    }
+
+    void HandlePeriodic(AuraEffect const* p_AurEff)
+    {
+        if (GetAura()->GetCharges() > 1)
+            if (auto l_Caster = GetCaster())
+                if (auto l_AuraOwner = GetUnitOwner())
+                    l_Caster->CastCustomSpell(SPELL_SHADOW_WORD_BANE_AOE, SpellValueMod::SPELLVALUE_BASE_POINT0, GetAura()->GetCharges(), l_AuraOwner);
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_sun_tenderheart_shadow_word_bane_dmg::OnApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_sun_tenderheart_shadow_word_bane_dmg::HandlePeriodic, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE);
+    }
+};
+
+/// Sha Sear - 143424
+class spell_sun_sha_shear : public SpellScript
+{
+    PrepareSpellScript(spell_sun_sha_shear);
+
+    void CalculateDamage(SpellEffIndex /*p_EffIndex*/)
+    {
+        if (Unit* l_Target = GetHitUnit())
+        {
+            if (AuraEffect* l_ShaShear = l_Target->GetAuraEffect(Spells::SPELL_SHA_SEAR, SpellEffIndex::EFFECT_0))
+            {
+                int32 l_Damage = GetHitDamage();
+                AddPct(l_Damage, l_ShaShear->GetTickNumber() * 25);
+                SetHitDamage(l_Damage);
+            }
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_sun_sha_shear::CalculateDamage, EFFECT_1, SPELL_EFFECT_SCHOOL_DAMAGE);
+    }
+};
+
+/// Corrupted Brew - 143019
+class spell_rook_stonetoe_corrupted_brew_aoe : public SpellScript
+{
+    PrepareSpellScript(spell_rook_stonetoe_corrupted_brew_aoe);
+
+    bool Load() override
+    {
+        return GetCaster()->IsCreature();
+    }
+
+    void HandleDummy(SpellEffIndex /*p_EffIndex*/)
+    {
+        if (auto l_Target = GetHitUnit())
+            GetCaster()->CastSpell(l_Target, GetCorruptedBrewSpellId(GetCaster()), true);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_rook_stonetoe_corrupted_brew_aoe::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+
+private:
+
+    uint32 GetCorruptedBrewSpellId(Unit* p_Caster)
+    {
+        uint32 l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_1;
+
+        if (p_Caster->GetMap()->IsHeroic())
+        {
+            uint32 l_BrewCount = p_Caster->ToCreature()->AI()->GetData(DATA_ABILITY_COUNT);
+
+            if (l_BrewCount < 3)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_1;
+            else if (l_BrewCount < 5)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_2;
+            else if (l_BrewCount < 7)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_3;
+            else if (l_BrewCount < 9)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_4;
+            else if (l_BrewCount < 11)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_5;
+            else if (l_BrewCount < 13)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_6;
+            else if (l_BrewCount < 15)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_7;
+            else if (l_BrewCount < 17)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_8;
+        }
+
+        return l_SpellId;
+    }
+};
+
+class spell_rook_stonetoe_inferno_strike : public SpellScriptLoader
 {
     public:
-        spell_rook_clash() : SpellScriptLoader("spell_rook_clash") { }
+        spell_rook_stonetoe_inferno_strike() : SpellScriptLoader("spell_rook_stonetoe_inferno_strike") { }
 
-        class spell_rook_clash_SpellScript : public SpellScript
+        class spell_rook_stonetoe_inferno_strike_SpellScript : public SpellScript
         {
-            PrepareSpellScript(spell_rook_clash_SpellScript);
+            PrepareSpellScript(spell_rook_stonetoe_inferno_strike_SpellScript);
 
-            void HandleDummy(SpellEffIndex /*effIndex*/)
+            void HandleDamage(SpellEffIndex effIndex)
             {
-                Unit* caster = GetCaster();
-                Unit* target = GetHitUnit();
+                //int32 multiplier = GetSpellInfo()->Effects[EFFECT_0].BasePoints;
+                int32 multiplier = GetSpellInfo()->GetEffect(EFFECT_0)->BasePoints;
 
-                if (!caster || !target)
-                    return;
-
-                caster->CastSpell(target, SPELL_CLASH_ROOK, true);
-                target->CastSpell(caster, SPELL_CLASH_TARGET, true);
+                SetHitDamage(GetHitDamage() * multiplier);
             }
 
             void Register()
             {
-                OnEffectHitTarget += SpellEffectFn(spell_rook_clash_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_rook_stonetoe_inferno_strike_SpellScript::HandleDamage, EFFECT_1, SPELL_EFFECT_SCHOOL_DAMAGE);
             }
         };
 
         SpellScript* GetSpellScript() const
         {
-            return new spell_rook_clash_SpellScript();
+            return new spell_rook_stonetoe_inferno_strike_SpellScript();
         }
 };
 
-// Gouge (Boss Cast) 143330.
-class spell_he_gouge : public SpellScriptLoader
+/// Gouge - 143330
+class spell_he_stonefoot_gouge : public SpellScript
 {
-    public:
-        spell_he_gouge() : SpellScriptLoader("spell_he_gouge") { }
+    PrepareSpellScript(spell_he_stonefoot_gouge);
 
-        class spell_he_gouge_SpellScript : public SpellScript
+    enum eSpells
+    {
+        Shadowstep = 143285
+    };
+
+    bool Load() override
+    {
+        return GetCaster()->IsCreature();
+    }
+
+    void HandleDummy(SpellEffIndex /*p_EffIndex*/)
+    {
+        Unit* l_HeStoneFoot = GetCaster();
+
+        if (Unit* l_Target = GetHitUnit())
         {
-            PrepareSpellScript(spell_he_gouge_SpellScript);
-
-            void HandleDummy(SpellEffIndex /*effIndex*/)
+            if (l_Target->isInBack(l_HeStoneFoot))
+                l_HeStoneFoot->CastSpell(l_Target, Spells::SPELL_GOUGE_KNOCKBACK, true);
+            else
             {
-                Unit* caster = GetCaster();
-                Unit* target = GetHitUnit();
+                l_HeStoneFoot->CastSpell(l_Target, SPELL_GOUGE_DMG, true);
 
-                if (!caster || !target)
-                    return;
-
-                 // If the tank is facing the boss, incapacitate him. Else, just knock him back a bit.
-                if (target->HasInArc(M_PI / 3, caster))
-                    caster->CastSpell(target, SPELL_HE_GOUGE_DMG_STUN, true);
-                else
-                    caster->CastSpell(target, SPELL_HE_GOUGE_KB, true);
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_he_gouge_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_he_gouge_SpellScript();
-        }
-};
-
-// Instant Poison 143210.
-class spell_he_instant_poison : public SpellScriptLoader
-{
-    public:
-        spell_he_instant_poison() : SpellScriptLoader("spell_he_instant_poison") { }
-
-        class spell_he_instant_poison_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_he_instant_poison_SpellScript);
-
-            void HandleScript(SpellEffIndex /*effIndex*/)
-            {
-                Unit* caster = GetCaster();
-
-                if (!caster)
-                    return;
-
-                caster->RemoveAurasDueToSpell(SPELL_NOXIOUS_POISON);
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_he_instant_poison_SpellScript::HandleScript, EFFECT_2, SPELL_EFFECT_SCRIPT_EFFECT);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_he_instant_poison_SpellScript();
-        }
-};
-
-// Noxious Poison 143225.
-class spell_he_noxious_poison : public SpellScriptLoader
-{
-    public:
-        spell_he_noxious_poison() : SpellScriptLoader("spell_he_noxious_poison") { }
-
-        class spell_he_noxious_poison_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_he_noxious_poison_SpellScript);
-
-            void HandleScript(SpellEffIndex /*effIndex*/)
-            {
-                Unit* caster = GetCaster();
-
-                if (!caster)
-                    return;
-
-                caster->RemoveAurasDueToSpell(SPELL_INSTANT_POISON);
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_he_noxious_poison_SpellScript::HandleScript, EFFECT_2, SPELL_EFFECT_SCRIPT_EFFECT);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_he_noxious_poison_SpellScript();
-        }
-};
-
-// Mark of Anguish (Boss cast) 143822.
-class spell_he_mark_of_anguish : public SpellScriptLoader
-{
-    public:
-        spell_he_mark_of_anguish() : SpellScriptLoader("spell_he_mark_of_anguish") { }
-
-        class spell_he_mark_of_anguish_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_he_mark_of_anguish_SpellScript);
-
-            void HandleDummy(SpellEffIndex /*effIndex*/)
-            {
-                Unit* caster = GetCaster();
-                Unit* target = GetHitUnit();
-
-                if (!caster || !target)
-                    return;
-
-                caster->AddAura(SPELL_MARK_OF_ANGUISH_MAIN, target);
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_he_mark_of_anguish_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_he_mark_of_anguish_SpellScript();
-        }
-};
-
-// Mark of Anguish (Main target spell) 143840.
-class spell_he_mark_of_anguish_main : public SpellScriptLoader
-{
-    public:
-        spell_he_mark_of_anguish_main() : SpellScriptLoader("spell_he_mark_of_anguish_main") { }
-
-        class spell_he_mark_of_anguish_main_AuraScript : public AuraScript
-        {
-            PrepareAuraScript(spell_he_mark_of_anguish_main_AuraScript);
-
-            void OnApply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
-            {
-                Unit* caster = GetCaster();
-                Unit* target = GetTarget();
-
-                if (!caster || !target)
-                    return;
-
-                target->AddAura(SPELL_DEBILITATION, target);
-
-                // Make the Embodied Anguish attack this target.
-                if (Creature* anguish = caster->FindNearestCreature(NPC_EMBODIED_ANGUISH, 300.0f, true))
-                    anguish->AI()->AttackStart(target);
-            }
-
-            void OnTick(constAuraEffectPtr aurEff)
-            {
-                Unit* target = GetTarget();
-
-                if (!target)
-                    return;
-
-                target->CastSpell(target, SPELL_MARK_OF_ANGUISH_DAMAGE, true);
-            }
-
-            void Register()
-            {
-                OnEffectApply += AuraEffectApplyFn(spell_he_mark_of_anguish_main_AuraScript::OnApply, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
-                OnEffectPeriodic += AuraEffectPeriodicFn(spell_he_mark_of_anguish_main_AuraScript::OnTick, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
-            }
-        };
-
-        AuraScript* GetAuraScript() const
-        {
-            return new spell_he_mark_of_anguish_main_AuraScript();
-        }
-};
-
-// Mark of Anguish (Transfer spell) 143842.
-class spell_he_mark_of_anguish_transfer : public SpellScriptLoader
-{
-    public:
-        spell_he_mark_of_anguish_transfer() : SpellScriptLoader("spell_he_mark_of_anguish_transfer") { }
-
-        class spell_he_mark_of_anguish_transfer_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_he_mark_of_anguish_transfer_SpellScript);
-
-            void HandleDummyLaunchTarget(SpellEffIndex /*effIndex*/)
-            {
-                Unit* caster = GetCaster();
-                Unit* target = GetHitUnit();
-
-                if (!caster || !target)
-                    return;
-
-                if (Creature* anguish = caster->FindNearestCreature(NPC_EMBODIED_ANGUISH, 300.0f, true))
+                if (Unit* l_NewTarget = l_HeStoneFoot->ToCreature()->AI()->SelectTarget(SELECT_TARGET_RANDOM, 0, [l_Target](Unit const* p_Target) -> bool
                 {
-                    anguish->AddAura(SPELL_MARK_OF_ANGUISH_MAIN, target);
-                    anguish->CastSpell(anguish, SPELL_SHADOW_WEAKNESS_TRANSFER, true);
+                    return p_Target->IsPlayer() && p_Target != l_Target;
+                }))
+                {
+                    l_HeStoneFoot->getThreatManager().resetAllAggro();
+                    l_HeStoneFoot->AddThreat(l_NewTarget, 10000000.0f);
+                    l_HeStoneFoot->ToCreature()->AI()->AttackStart(l_NewTarget);
+
+                    l_HeStoneFoot->CastSpell(l_NewTarget, eSpells::Shadowstep, true);
+                    l_HeStoneFoot->ClearUnitState(UNIT_STATE_CASTING);
+
+                    l_HeStoneFoot->ToCreature()->AI()->SetGUID(l_NewTarget->GetGUID(), Guids::GUID_FIXATE_TARGET);
                 }
+            }
+        }
+    }
 
-                caster->RemoveAurasDueToSpell(SPELL_MARK_OF_ANGUISH_MAIN);
-                caster->RemoveAurasDueToSpell(SPELL_DEBILITATION);
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_he_stonefoot_gouge::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+class spell_rook_stonetoe_clash_aoe : public SpellScriptLoader
+{
+    public:
+        spell_rook_stonetoe_clash_aoe() : SpellScriptLoader("spell_rook_stonetoe_clash_aoe") { }
+
+        class spell_rook_stonetoe_clash_aoe_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_rook_stonetoe_clash_aoe_SpellScript);
+
+            void HandleDummy(SpellEffIndex effIndex)
+            {
+                if (!GetCaster() || !GetHitUnit())
+                    return;
+
+                float distance = GetCaster()->GetDistance(GetHitUnit());
+                Position centerPos;
+                GetCaster()->GetNearPoint(GetCaster(), centerPos.m_positionX, centerPos.m_positionY, centerPos.m_positionZ, 0.0f, distance / 2.0f, GetCaster()->GetAngle(GetHitUnit()));
+                centerPos.m_positionZ += 0.1f;
+
+                GetCaster()->CastSpell(centerPos.GetPositionX(), centerPos.GetPositionY(), centerPos.GetPositionZ(), SPELL_CLASH_JUMP, true);
+                GetHitUnit()->CastSpell(centerPos.GetPositionX(), centerPos.GetPositionY(), centerPos.GetPositionZ(), SPELL_CLASH_CHARGE, true);
             }
 
             void Register()
             {
-                OnEffectLaunchTarget += SpellEffectFn(spell_he_mark_of_anguish_transfer_SpellScript::HandleDummyLaunchTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_rook_stonetoe_clash_aoe_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
         SpellScript* GetSpellScript() const
         {
-            return new spell_he_mark_of_anguish_transfer_SpellScript();
+            return new spell_rook_stonetoe_clash_aoe_SpellScript();
         }
 };
 
-// Sha Shear (Damage spell) 143424.
-class spell_sun_sha_shear : public SpellScriptLoader
+/// Corruption Shock - 143958
+class spell_rook_stonetoe_corruption_shock_aoe : public SpellScript
+{
+    PrepareSpellScript(spell_rook_stonetoe_corruption_shock_aoe);
+
+    void HandleDummy(SpellEffIndex p_EffIndex)
+    {
+        if (auto l_Target = GetHitUnit())
+            GetCaster()->CastSpell(l_Target, GetSpellValue()->EffectBasePoints[0], true);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_rook_stonetoe_corruption_shock_aoe::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+class spell_he_softfoot_mark_of_anguish_aoe : public SpellScriptLoader
 {
     public:
-        spell_sun_sha_shear() : SpellScriptLoader("spell_sun_sha_shear") { }
+        spell_he_softfoot_mark_of_anguish_aoe() : SpellScriptLoader("spell_he_softfoot_mark_of_anguish_aoe") { }
 
-        class spell_sun_sha_shear_SpellScript : public SpellScript
+        class spell_he_softfoot_mark_of_anguish_aoe_SpellScript : public SpellScript
         {
-            PrepareSpellScript(spell_sun_sha_shear_SpellScript);
+            PrepareSpellScript(spell_he_softfoot_mark_of_anguish_aoe_SpellScript);
 
-            void CalculateDamage(SpellEffIndex /*effIndex*/)
+            void HandleDummy(SpellEffIndex effIndex)
             {
-                Unit* target = GetHitUnit();
-
-                if (!target)
+                if (!GetCaster() || !GetHitUnit())
                     return;
 
-                if (constAuraEffectPtr shearAurEff = target->GetAuraEffect(SPELL_SHA_SHEAR, EFFECT_0))
-                    SetHitDamage(int32(GetHitDamage() + ((GetHitDamage() * shearAurEff->GetTickNumber()) / 4))); // Increases by 25% each tick.
+                if (SpellInfo const* l_SpellInfo = sSpellMgr->GetSpellInfo(Spells::SPELL_DEBILITATION, DIFFICULTY_NONE))
+                    GetCaster()->AddAura(l_SpellInfo, MAX_EFFECT_MASK, GetHitUnit());
+
+                if (Creature* pCreature = GetCaster()->ToCreature())
+                {
+                    pCreature->AI()->SetGUID(GetHitUnit()->GetGUID(), GUID_MARK_OF_ANGUISH);
+                }
             }
 
             void Register()
             {
-                OnEffectHitTarget += SpellEffectFn(spell_sun_sha_shear_SpellScript::CalculateDamage, EFFECT_1, SPELL_EFFECT_SCHOOL_DAMAGE);
+                OnEffectHitTarget += SpellEffectFn(spell_he_softfoot_mark_of_anguish_aoe_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
         SpellScript* GetSpellScript() const
         {
-            return new spell_sun_sha_shear_SpellScript();
+            return new spell_he_softfoot_mark_of_anguish_aoe_SpellScript();
         }
 };
 
-// Shadow Word : Bane (Boss cast) 143446.
-class spell_sun_shadow_word_bane : public SpellScriptLoader
+/// Mark of Anguish - 143842
+class spell_he_softfoot_mark_of_anguish_dummy : public SpellScript
+{
+    PrepareSpellScript(spell_he_softfoot_mark_of_anguish_dummy);
+
+    void HandleDummy()
+    {
+        if (auto l_Target = GetHitUnit())
+        {
+            if (auto l_Aura = GetCaster()->GetAura(Spells::SPELL_MARK_OF_ANGUISH_AURA_2))
+            {
+                if (SpellInfo const* l_SpellInfo = sSpellMgr->GetSpellInfo(Spells::SPELL_DEBILITATION, DIFFICULTY_NONE))
+                    GetCaster()->AddAura(l_SpellInfo, MAX_EFFECT_MASK, l_Target);
+
+                if (auto l_AuraCaster = l_Aura->GetCaster()) ///< Anguish
+                    if (l_AuraCaster->IsCreature() && l_AuraCaster->ToCreature()->AI())
+                        l_AuraCaster->ToCreature()->AI()->SetGUID(l_Target->GetGUID(), GUID_MARK_OF_ANGUISH);
+
+                l_Aura->Remove();
+            }
+        }
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_he_softfoot_mark_of_anguish_dummy::HandleDummy);
+    }
+};
+
+class spell_he_softfoot_shadow_weakness_aoe : public SpellScriptLoader
 {
     public:
-        spell_sun_shadow_word_bane() : SpellScriptLoader("spell_sun_shadow_word_bane") { }
+        spell_he_softfoot_shadow_weakness_aoe() : SpellScriptLoader("spell_he_softfoot_shadow_weakness_aoe") { }
 
-        class spell_sun_shadow_word_bane_SpellScript : public SpellScript
+        class spell_he_softfoot_shadow_weakness_aoe_SpellScript : public SpellScript
         {
-            PrepareSpellScript(spell_sun_shadow_word_bane_SpellScript);
+            PrepareSpellScript(spell_he_softfoot_shadow_weakness_aoe_SpellScript);
 
-            void HandleDummy(SpellEffIndex /*effIndex*/)
+            void HandleHitTarget(SpellEffIndex effIndex)
             {
-                Unit* caster = GetCaster();
-
-                if (!caster)
+                if (!GetCaster() || !GetHitUnit())
                     return;
 
-                if (!caster->ToCreature())
-                    return;
-
-                uint32 count = 2; // 10 Normal.
-
-                if (caster->GetMap()->GetDifficulty() == RAID_DIFFICULTY_10MAN_HEROIC)
-                    count = 5;
-                else if (caster->GetMap()->GetDifficulty() == RAID_DIFFICULTY_25MAN_NORMAL)
-                    count = 4;
-                else if (caster->GetMap()->GetDifficulty() == RAID_DIFFICULTY_25MAN_HEROIC)
-                    count = 10;
-
-                std::list<Unit*> targets;
-                caster->ToCreature()->AI()->SelectTargetList(targets, count, SELECT_TARGET_RANDOM, 100.0f, true);
-                if (!targets.empty())
-                    for (std::list<Unit*>::iterator itr = targets.begin(); itr != targets.end(); ++itr)
-                        caster->CastSpell(*itr, SPELL_SHADOW_WORD_BANE_HIT, true);
+                GetCaster()->AddAura(SPELL_SHADOW_WEAKNESS_DEBUFF, GetHitUnit());
             }
 
             void Register()
             {
-                OnEffectHitTarget += SpellEffectFn(spell_sun_shadow_word_bane_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectHitTarget += SpellEffectFn(spell_he_softfoot_shadow_weakness_aoe_SpellScript::HandleHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
         SpellScript* GetSpellScript() const
         {
-            return new spell_sun_shadow_word_bane_SpellScript();
+            return new spell_he_softfoot_shadow_weakness_aoe_SpellScript();
         }
 };
 
-// Shadow Word : Bane (Main target spell) 143434.
-class spell_sun_shadow_word_bane_main : public SpellScriptLoader
+/// Mark of Anguish - 143840
+class spell_he_softfoot_mark_of_anguish_aura_2 : public AuraScript
+{
+    PrepareAuraScript(spell_he_softfoot_mark_of_anguish_aura_2);
+
+    void HandlePeriodic(AuraEffect const* /*p_AurEff*/)
+    {
+        if (auto l_Onwer = GetUnitOwner())
+            l_Onwer->CastSpell(l_Onwer, Spells::SPELL_MARK_OF_ANGUISH_DMG, true);
+    }
+
+    void Register() override
+    {
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_he_softfoot_mark_of_anguish_aura_2::HandlePeriodic, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
+    }
+};
+
+class spell_he_softfoot_instant_poison : public SpellScriptLoader
 {
     public:
-        spell_sun_shadow_word_bane_main() : SpellScriptLoader("spell_sun_shadow_word_bane_main") { }
+        spell_he_softfoot_instant_poison() : SpellScriptLoader("spell_he_softfoot_instant_poison") { }
 
-        class spell_sun_shadow_word_bane_main_AuraScript : public AuraScript
+        class spell_he_softfoot_instant_poison_AuraScript : public AuraScript
         {
-            PrepareAuraScript(spell_sun_shadow_word_bane_main_AuraScript)
+            PrepareAuraScript(spell_he_softfoot_instant_poison_AuraScript);
 
-            void OnPeriodic(constAuraEffectPtr aurEff)
+            void OnProc(AuraEffect const* /*p_AurEff*/, ProcEventInfo & p_EventInfo)
             {
-                Unit* caster = GetCaster();
-                Unit* target = GetTarget();
+                PreventDefaultAction();
 
-                if (!caster || !target)
+                if (!GetCaster())
                     return;
+                // todo: readd commented part
+                if (Creature* pHe = GetCaster()->ToCreature())
+                /*{
+                    if (pHe->HasSpellCooldown(SPELL_INSTANT_POISON_DMG))
+                        return;
 
-                // First 3 ticks, it jumps to another player not having the main spell.
-                if (aurEff->GetTickNumber() <= 3)
-                    if (Creature* Sun = target->FindNearestCreature(BOSS_SUN_TENDERHEART, 300.0f, true))
-                        if (Unit* playerTarget = Sun->ToCreature()->AI()->SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true, -SPELL_SHADOW_WORD_BANE_HIT))
-                            target->CastSpell(playerTarget, SPELL_SHADOW_WORD_BANE_JUMP, true);
+                    */if (Unit* target = pHe->GetVictim())/*
+                    {*/
+                        pHe->CastSpell(target, SPELL_INSTANT_POISON_DMG, true);
+                /*        pHe->_AddCreatureSpellCooldown(SPELL_INSTANT_POISON_DMG, time(NULL) + 3);
+                    }
+                }*/
             }
 
             void Register()
             {
-                OnEffectPeriodic += AuraEffectPeriodicFn(spell_sun_shadow_word_bane_main_AuraScript::OnPeriodic, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE);
+                OnEffectProc += AuraEffectProcFn(spell_he_softfoot_instant_poison_AuraScript::OnProc, EFFECT_1, SPELL_AURA_PROC_TRIGGER_SPELL);
             }
         };
 
         AuraScript* GetAuraScript() const
         {
-            return new spell_sun_shadow_word_bane_main_AuraScript();
+            return new spell_he_softfoot_instant_poison_AuraScript();
         }
 };
 
-// Shadow Word : Bane (Jump spell) 143443.
-class spell_sun_shadow_word_bane_jump : public SpellScriptLoader
+class spell_he_softfoot_noxious_poison : public SpellScriptLoader
 {
     public:
-        spell_sun_shadow_word_bane_jump() : SpellScriptLoader("spell_sun_shadow_word_bane_jump") { }
+        spell_he_softfoot_noxious_poison() : SpellScriptLoader("spell_he_softfoot_noxious_poison") { }
 
-        class spell_sun_shadow_word_bane_jump_SpellScript : public SpellScript
+        class spell_he_softfoot_noxious_poison_AuraScript : public AuraScript
         {
-            PrepareSpellScript(spell_sun_shadow_word_bane_jump_SpellScript);
+            PrepareAuraScript(spell_he_softfoot_noxious_poison_AuraScript);
 
-            void HandleDummy(SpellEffIndex /*effIndex*/)
+            void OnProc(AuraEffect const* aurEff, ProcEventInfo& eventInfo)
             {
-                Unit* caster = GetCaster();
-                Unit* target = GetHitUnit();
+                PreventDefaultAction();
 
-                if (!caster || !target)
+                Unit* actor = eventInfo.GetActor();
+
+                Unit* target = eventInfo.GetActionTarget();
+
+                if (!actor || !target)
                     return;
 
-                caster->CastSpell(target, SPELL_SHADOW_WORD_BANE_HIT, true);
+                actor->CastSpell(target, SPELL_NOXIOUS_POISON_MISSILE_1, true);
             }
 
             void Register()
             {
-                OnEffectHitTarget += SpellEffectFn(spell_sun_shadow_word_bane_jump_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_sun_shadow_word_bane_jump_SpellScript();
-        }
-};
-
-// Calamity 143491.
-class spell_sun_calamity : public SpellScriptLoader
-{
-    public:
-        spell_sun_calamity() : SpellScriptLoader("spell_sun_calamity") { }
-
-        class spell_sun_calamity_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_sun_calamity_SpellScript);
-
-            void HandleDummy(SpellEffIndex /*effIndex*/)
-            {
-                Unit* caster = GetCaster();
-                Unit* target = GetHitUnit();
-
-                if (!caster || !target)
-                    return;
-
-                caster->CastSpell(target, SPELL_CALAMITY_DAMAGE, true);
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_sun_calamity_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_sun_calamity_SpellScript();
-        }
-};
-
-// Dark Meditation 143546.
-class spell_sun_dark_meditation : public SpellScriptLoader
-{
-    public:
-        spell_sun_dark_meditation() : SpellScriptLoader("spell_sun_dark_meditation") { }
-
-        class spell_sun_dark_meditation_AuraScript : public AuraScript
-        {
-            PrepareAuraScript(spell_sun_dark_meditation_AuraScript);
-
-            void OnTick(constAuraEffectPtr aurEff)
-            {
-                Unit* caster = GetCaster();
-
-                if (!caster)
-                    return;
-
-                caster->CastSpell(caster, SPELL_DARK_MEDITATION_DAMAGE, true);
-            }
-
-            void Register()
-            {
-                OnEffectPeriodic += AuraEffectPeriodicFn(spell_sun_dark_meditation_AuraScript::OnTick, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
+                OnEffectProc += AuraEffectProcFn(spell_he_softfoot_noxious_poison_AuraScript::OnProc, EFFECT_1, SPELL_AURA_PROC_TRIGGER_SPELL);
             }
         };
 
         AuraScript* GetAuraScript() const
         {
-            return new spell_sun_dark_meditation_AuraScript();
+            return new spell_he_softfoot_noxious_poison_AuraScript();
         }
 };
 
-// Corruption Shock (Boss cast) 143958.
-class spell_embodied_gloom_corruption_shock : public SpellScriptLoader
+/// Mark of Anguish - 144365
+class spell_he_softfoot_mark_of_anguish_dmg : public SpellScriptLoader
+{
+public:
+    spell_he_softfoot_mark_of_anguish_dmg() : SpellScriptLoader("spell_he_softfoot_mark_of_anguish_dmg") { }
+
+    class spell_he_softfoot_mark_of_anguish_dmg_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_he_softfoot_mark_of_anguish_dmg_SpellScript);
+
+        void HandleDamage()
+        {
+            // This spell has SPELL_ATTR3_NO_DONE_BONUS and SPELL_ATTR6_NO_DONE_PCT_DAMAGE_MODS.
+            // So calclate damage manually.
+            auto l_Damage = GetHitDamage();
+
+            if (auto l_Target = GetHitUnit())
+                if (auto l_Aura = l_Target->GetAura(Spells::SPELL_SHADOW_WEAKNESS_DEBUFF))
+                    SetHitDamage(AddPct(l_Damage, l_Aura->GetEffect(SpellEffIndex::EFFECT_0)->GetAmount()));
+        }
+
+        void Register()
+        {
+            AfterCast += SpellCastFn(spell_he_softfoot_mark_of_anguish_dmg_SpellScript::HandleDamage);
+        }
+
+    };
+
+    SpellScript* GetSpellScript() const
+    {
+        return new spell_he_softfoot_mark_of_anguish_dmg_SpellScript();
+    }
+};
+
+
+/// Called by Shadow Weakness - 144079
+class spell_he_softfoot_shadow_weakness : public SpellScriptLoader
 {
     public:
-        spell_embodied_gloom_corruption_shock() : SpellScriptLoader("spell_embodied_gloom_corruption_shock") { }
+        spell_he_softfoot_shadow_weakness() : SpellScriptLoader("spell_he_softfoot_shadow_weakness") { }
 
-        class spell_embodied_gloom_corruption_shock_SpellScript : public SpellScript
+        class spell_he_softfoot_shadow_weakness_AuraScript : public AuraScript
         {
-            PrepareSpellScript(spell_embodied_gloom_corruption_shock_SpellScript);
+            PrepareAuraScript(spell_he_softfoot_shadow_weakness_AuraScript);
 
-            void HandleDummy(SpellEffIndex /*effIndex*/)
+            void HandleProc(AuraEffect const* aurEff, ProcEventInfo& eventInfo)
             {
-                Unit* caster = GetCaster();
+                PreventDefaultAction();
 
-                if (!caster)
+                Unit* l_Caster = eventInfo.GetActor();
+                Unit* l_Target = eventInfo.GetActionTarget();
+
+                if (!l_Caster || !l_Target)
                     return;
 
-                if (!caster->ToCreature())
-                    return;
-
-                uint32 count = 2; // 10 Normal.
-
-                if (caster->GetMap()->GetDifficulty() == RAID_DIFFICULTY_10MAN_HEROIC)
-                    count = 5;
-                else if (caster->GetMap()->GetDifficulty() == RAID_DIFFICULTY_25MAN_NORMAL)
-                    count = 4;
-                else if (caster->GetMap()->GetDifficulty() == RAID_DIFFICULTY_25MAN_HEROIC)
-                    count = 10;
-
-                std::list<Unit*> targets;
-                caster->ToCreature()->AI()->SelectTargetList(targets, count, SELECT_TARGET_RANDOM, 100.0f, true);
-                if (!targets.empty())
-                    for (std::list<Unit*>::iterator itr = targets.begin(); itr != targets.end(); ++itr)
-                        caster->CastSpell(*itr, SPELL_CORRUPTION_SHOCK_MISSILE, true);
+                l_Caster->CastSpell(l_Target, Spells::SPELL_SHADOW_WEAKNESS_DEBUFF, true);
             }
 
             void Register()
             {
-                OnEffectHitTarget += SpellEffectFn(spell_embodied_gloom_corruption_shock_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+                OnEffectProc += AuraEffectProcFn(spell_he_softfoot_shadow_weakness_AuraScript::HandleProc, EFFECT_0, SPELL_AURA_DUMMY);
             }
+
         };
 
-        SpellScript* GetSpellScript() const
+        AuraScript* GetAuraScript() const
         {
-            return new spell_embodied_gloom_corruption_shock_SpellScript();
+            return new spell_he_softfoot_shadow_weakness_AuraScript();
         }
 };
 
-// Corruption Chain (Boss cast) 145653.
-class spell_embodied_gloom_corruption_chain : public SpellScriptLoader
+struct spell_area_sun_tenderheart_dark_meditation : public AreaTriggerAI
 {
-    public:
-        spell_embodied_gloom_corruption_chain() : SpellScriptLoader("spell_embodied_gloom_corruption_chain") { }
+    spell_area_sun_tenderheart_dark_meditation(AreaTrigger* areatrigger) : AreaTriggerAI(areatrigger) { }
 
-        class spell_embodied_gloom_corruption_chain_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_embodied_gloom_corruption_chain_SpellScript);
 
-            void HandleDummy(SpellEffIndex /*effIndex*/)
-            {
-                Unit* caster = GetCaster();
-                Unit* target = GetHitUnit();
+    void OnUnitEnter(Unit* unit)
+    {
+        if (!at->GetCaster())
+            return;
 
-                if (!caster || !target)
-                    return;
+        at->GetCaster()->AddAura(SPELL_MEDITATIVE_FIELD, unit);
+    }
 
-                caster->CastSpell(target, SPELL_CORRUPTION_CHAIN_DAMAGE, true);
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_embodied_gloom_corruption_chain_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_embodied_gloom_corruption_chain_SpellScript();
-        }
+    void OnUnitExit(Unit* unit)
+    {
+        unit->RemoveAura(SPELL_MEDITATIVE_FIELD);
+    }
 };
 
-// Shadow Weakness (Transfer spell) 144081.
-class spell_embodied_anguish_shadow_weakness_transfer : public SpellScriptLoader
+struct spell_area_he_softfoot_noxious_poison : public AreaTriggerAI
 {
-    public:
-        spell_embodied_anguish_shadow_weakness_transfer() : SpellScriptLoader("spell_embodied_anguish_shadow_weakness_transfer") { }
+    spell_area_he_softfoot_noxious_poison(AreaTrigger* areatrigger) : AreaTriggerAI(areatrigger) { }
 
-        class spell_embodied_anguish_shadow_weakness_transfer_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_embodied_anguish_shadow_weakness_transfer_SpellScript);
+    void OnUnitEnter(Unit* unit)
+    {
+        if (!at->GetCaster())
+            return;
 
-            void HandleDummy(SpellEffIndex /*effIndex*/)
-            {
-                Unit* caster = GetCaster();
-                Unit* target = GetHitUnit();
+        at->GetCaster()->AddAura(SPELL_NOXIOUS_POISON_AURA, unit);
+    }
 
-                if (!caster || !target)
-                    return;
-
-                if (target->GetTypeId() == TYPEID_PLAYER)
-                    caster->AddAura(SPELL_SHADOW_WEAKNESS, target);
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_embodied_anguish_shadow_weakness_transfer_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_embodied_anguish_shadow_weakness_transfer_SpellScript();
-        }
+    void OnUnitExit(Unit* unit)
+    {
+        unit->RemoveAura(SPELL_NOXIOUS_POISON_AURA);
+    }
 };
 
-void AddSC_fallen_protectors()
+/// Defiled Ground - 143959
+class spell_rook_stonetoe_defiled_ground : public AuraScript
 {
-    new boss_rook_stonetoe();
-    new boss_he_softfoot();
-    new boss_sun_tenderheart();
-    new npc_embodied_misery();
-    new npc_embodied_sorrow();
-    new npc_embodied_gloom();
-    new npc_embodied_anguish();
-    new npc_embodied_despair();
-    new npc_embodied_desperation();
-    new npc_despair_spawn();
-    new npc_desperation_spawn();
-    new spell_rook_corrupted_brew();
-    new spell_rook_clash();
-    new spell_he_gouge();
-    new spell_he_instant_poison();
-    new spell_he_noxious_poison();
-    new spell_he_mark_of_anguish();
-    new spell_he_mark_of_anguish_main();
-    new spell_he_mark_of_anguish_transfer();
-    new spell_sun_sha_shear();
-    new spell_sun_shadow_word_bane();
-    new spell_sun_shadow_word_bane_main();
-    new spell_sun_shadow_word_bane_jump();
-    new spell_sun_calamity();
-    new spell_sun_dark_meditation();
-    new spell_embodied_gloom_corruption_shock();
-    new spell_embodied_gloom_corruption_chain();
-    new spell_embodied_anguish_shadow_weakness_transfer();
+    PrepareAuraScript(spell_rook_stonetoe_defiled_ground);
+
+    ObjectGuid m_TriggerGuid = ObjectGuid::Empty;
+
+    // todo: readd
+    /*void SetGUID(ObjectGuid guid, int32 id) override
+    {
+        m_TriggerGuid = guid;
+    }
+
+    ObjectGuid GetGUID(int32 id) const override
+    {
+        return m_TriggerGuid;
+    }*/
+
+    void Register() override { }
+};
+
+/// Defiled Ground - 143960 (not existing in dbc)
+struct spell_area_rook_stonetoe_defiled_ground : public AreaTriggerAI
+{
+    spell_area_rook_stonetoe_defiled_ground(AreaTrigger* areatrigger) : AreaTriggerAI(areatrigger) { }
+
+    bool OnAddTarget(Unit* p_Target)
+    {
+        return p_Target->IsPlayer();
+    }
+
+    void OnUnitEnter(Unit* target)
+    {
+        if (!target->IsPlayer())
+            return;
+
+        Aura* l_DefiledGround = target->GetAura(Spells::SPELL_DEFILED_GROUND_AURA);
+        bool l_HasInArc = at->HasInArc(float(M_PI) / 2, target);
+
+        if (l_DefiledGround /*&& l_DefiledGround->GetScriptGuid(0) == trigger->GetGUID() */ && !l_HasInArc)
+            l_DefiledGround->Remove();
+        else if (l_HasInArc && l_DefiledGround == nullptr)
+            if (auto l_Aura = target->AddAura(Spells::SPELL_DEFILED_GROUND_AURA, target))
+                //l_Aura->SetScriptGuid(0, at->GetGUID());
+                return;
+    }
+
+    void OnUnitExit(Unit* unit)
+    {
+        Aura* l_DefiledGround = unit->GetAura(Spells::SPELL_DEFILED_GROUND_AURA);
+
+        if (l_DefiledGround /*&& l_DefiledGround->GetScriptGuid(0) == at->GetGUID()*/)
+            l_DefiledGround->Remove();
+    }
+};
+
+/// Shadowstep - 143262
+class spell_he_stonefoot_shadowstep : public SpellScript
+{
+    PrepareSpellScript(spell_he_stonefoot_shadowstep);
+
+    bool Load() override
+    {
+        return GetCaster()->IsCreature();
+    }
+
+    void HandleDummy(SpellEffIndex /*p_EffIndex*/)
+    {
+        if (Unit* l_Target = GetHitUnit())
+            GetCaster()->CastSpell(l_Target, Spells::SPELL_SHADOWSTEP, true);
+
+        GetCaster()->ToCreature()->AI()->DoAction(Actions::ACTION_PREPARE_SHADOWSTEP_BACK);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_he_stonefoot_shadowstep::HandleDummy, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+/// Vengeful Strikes - 144396
+class spell_rook_stonetoe_vengeful_strikes : public AuraScript
+{
+    PrepareAuraScript(spell_rook_stonetoe_vengeful_strikes);
+
+    bool Load() override
+    {
+        return GetCaster()->IsCreature();
+    }
+
+    void OnRemove(AuraEffect const* p_AurEff, AuraEffectHandleModes /*p_Mode*/)
+    {
+        if (auto l_Caster = GetCaster())
+            if (GetTargetApplication()->GetRemoveMode() != AuraRemoveMode::AURA_REMOVE_BY_EXPIRE)
+                l_Caster->ToCreature()->AI()->DoAction(Actions::ACTION_VENGEFUL_STRIKES_FAILED);
+    }
+
+    void Register() override
+    {
+        OnEffectRemove += AuraEffectRemoveFn(spell_rook_stonetoe_vengeful_strikes::OnRemove, EFFECT_2, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+/// Spirit Bound - 143724
+class spell_sun_tenderheart_spawn_spirit_bound : public AuraScript
+{
+    PrepareAuraScript(spell_sun_tenderheart_spawn_spirit_bound);
+
+    bool Load() override
+    {
+        return GetCaster()->IsCreature();
+    }
+
+    void OnPeriodic(AuraEffect const* /*p_AurEff*/)
+    {
+        if (auto l_Caster = GetCaster())
+            l_Caster->ToCreature()->AI()->DoAction(Actions::ACTION_SPAWNS_SYNC_HP);
+    }
+
+    void Register() override
+    {
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_sun_tenderheart_spawn_spirit_bound::OnPeriodic, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+    }
+};
+
+void AddSC_boss_fallen_protectors()
+{
+    new boss_rook_stonetoe();                               // 71475
+    new boss_he_softfoot();                                 // 71479
+    new boss_sun_tenderheart();                             // 71480
+
+    RegisterCreatureAI(npc_rook_stonetoe_embodied_misery);          // 71476
+    RegisterCreatureAI(npc_rook_stonetoe_embodied_sorrow);          // 71481
+    RegisterCreatureAI(npc_rook_stonetoe_embodied_gloom);           // 71477
+
+    RegisterCreatureAI(npc_he_softfoot_embodied_anguish);           // 71478
+
+    RegisterCreatureAI(npc_sun_tenderheart_embodied_despair);       // 71474
+    RegisterCreatureAI(npc_sun_tenderheart_embodied_desperation);   // 71482
+    RegisterCreatureAI(npc_sun_tenderheart_spawn);                  // 71712, 71993
+
+    new spell_sun_tenderheart_calamity();                   // 143491
+
+    RegisterSpellScript(spell_sun_tenderheart_shadow_word_bane);        // 143446
+    RegisterSpellScript(spell_sun_tenderheart_shadow_word_bane_aoe);    // 143438
+    RegisterAuraScript(spell_sun_tenderheart_shadow_word_bane_dmg);     // 143434
+
+    RegisterSpellScript(spell_sun_sha_shear);               // 143424
+    RegisterSpellScript(spell_rook_stonetoe_corrupted_brew_aoe);        // 143019
+    new spell_rook_stonetoe_clash_aoe();                    // 143027
+    new spell_rook_stonetoe_inferno_strike();               // 143962
+    RegisterSpellScript(spell_rook_stonetoe_corruption_shock_aoe);           // 143958
+    RegisterSpellScript(spell_he_stonefoot_gouge);          // 143330
+    new spell_he_softfoot_mark_of_anguish_aoe();            // 143822
+    RegisterSpellScript(spell_he_softfoot_mark_of_anguish_dummy);            // 143842
+    new spell_he_softfoot_shadow_weakness_aoe();            // 144081
+    RegisterAuraScript(spell_he_softfoot_mark_of_anguish_aura_2);            // 143840
+    new spell_he_softfoot_instant_poison();                 // 143210
+    new spell_he_softfoot_noxious_poison();                 // 143225
+    new spell_he_softfoot_mark_of_anguish_dmg();              // 144365
+    new spell_he_softfoot_shadow_weakness();                // 144079
+
+    RegisterAreaTriggerAI(spell_area_sun_tenderheart_dark_meditation);       // 143546
+    RegisterAreaTriggerAI(spell_area_he_softfoot_noxious_poison);            // 143235
+
+    RegisterAuraScript(spell_rook_stonetoe_defiled_ground);                  // 143959
+    RegisterAreaTriggerAI(spell_area_rook_stonetoe_defiled_ground);          // 143960
+
+    RegisterSpellScript(spell_he_stonefoot_shadowstep);                      // 143262
+    RegisterAuraScript(spell_rook_stonetoe_vengeful_strikes);                // 144396
+
+    RegisterAuraScript(spell_sun_tenderheart_spawn_spirit_bound);            // 143724
 }

@@ -1,6 +1,7 @@
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-#include "siege_of_orgrimmar.h"
+#include "siege_of_orgrimmar.hpp"
+#include "MoveSplineInit.h"
+#include "SpellMgr.h"
+#include <algorithm>
 
 enum ScriptedTexts
 {
@@ -40,6 +41,12 @@ enum Spells
     SPELL_MORTAR_BLAST_MISSILE_2    = 144553, // heroic
     SPELL_MORTAR_BLAST_DMG_2        = 144556, // heroic
 
+    SPELL_RICOCHET_AREAGRIGGER      = 144356,
+    SPELL_RICOCHET_AURA             = 144375,
+    SPELL_RICOCHET_DMG              = 144327,
+    SPELL_DISAPPEAR                 = 149501,
+    SPELL_DISAPPEAR_REMOVE          = 149502,
+
     SPELL_FLAME_VENTS               = 144464,
     SPELL_IGNITE_ARMOR              = 144467,
 
@@ -67,7 +74,7 @@ enum Spells
 
     SPELL_CUTTER_LASER_AOE          = 144573, // casted by 'cutter laser' dummy
     SPELL_CUTTER_LASER_RAY          = 144576,
-    SPELL_CUTTER_LASER_FORCE        = 145190, // triggers script ?? 
+    SPELL_CUTTER_LASER_FORCE        = 145190, // triggers script ??
     SPELL_CUTTER_LASER_SCRIPT       = 144575, // ??
     SPELL_CUTTER_LASER_TARGET       = 146325,
     SPELL_CUTTER_LASER_DMG          = 144918,
@@ -91,8 +98,7 @@ enum Adds
     NPC_TAIL_GUN        = 71914,
 
     NPC_SAWBLADE_1      = 71469, // basic
-    NPC_SAWBLADE_2      = 71532, // when the sawblade moves
-    NPC_SAWBLADE_3      = 71945, // invisible ?
+    NPC_SAWBLADE_2      = 71945, // invisible
 
     NPC_CRAWLER_MINE    = 72050,
     NPC_CRAWLER_MINE_2  = 72060, // invisible, summoned by 144705 (I think it's target for real mine jumping)
@@ -112,6 +118,8 @@ enum Events
     EVENT_SCATTER_LASER,
     EVENT_MORTAR_BLAST,
     EVENT_CRAWLER_MINE,
+    EVENT_MORTAR_BLAST_SIEGE_MODE,
+    EVENT_RICOCHET,
 
     EVENT_SHOCK_PULSE,
     EVENT_DEMOLISHER_CANNONS,
@@ -124,12 +132,14 @@ enum Actions
 {
     ACTION_DEMOLISHER_CANNONS   = 1,
     ACTION_CUTTER_LASER,
+    ACTION_SAWBLADE_RICOCHET
 };
 
 enum eData
 {
     DATA_CRAWLER_MINE_DUMMY = 1,
     DATA_CUTTER_LASER_GUID,
+    DATA_BORER_DRILL_TARGET,
 };
 
 enum VehicleSeatPositions
@@ -150,19 +160,26 @@ enum Phases
 
 enum Timers
 {
-    TIMER_BERSERK                   = 10 * MINUTE * IN_MILLISECONDS,
+    TIMER_BERSERK_NORMAL            = 10 * MINUTE * IN_MILLISECONDS,
+    TIMER_BERSERK_HEROIC            = 8 * MINUTE * IN_MILLISECONDS,
     TIMER_FLAME_VENTS_FIRST         = 9 * IN_MILLISECONDS,
     TIMER_FLAME_VENTS               = 10 * IN_MILLISECONDS,
     TIMER_BORER_DRILL               = 17 * IN_MILLISECONDS,
-    TIMER_MORTAR_BLAST              = 4 * IN_MILLISECONDS,
+    TIMER_MORTAR_BLAST              = 7 * IN_MILLISECONDS,
     TIMER_SCATTER_LASER             = 11500,
     TIMER_CRAWLER_MINE              = 30 * IN_MILLISECONDS,
+    TIMER_DEMOLISHER_CANNONS        = 9500,
+    TIMER_RICOCHET_FIRST            = 15 * IN_MILLISECONDS,
+    TIMER_RICOCHET                  = 20 * IN_MILLISECONDS,
 
     TIMER_SHOCK_PULSE               = 16500,
-    TIMER_DEMOLISHER_CANNONS        = 8500,
+    TIMER_CRAWLER_MINE_SIEGE_MODE   = 7 * IN_MILLISECONDS, // after Shock Pulse
     TIMER_CUTTER_LASER              = 25 * IN_MILLISECONDS,
     TIMER_EXPLOSIVE_TAR_FIRST       = 7000,
     TIMER_EXPLOSIVE_TAR             = 30000,
+    TIMER_MORTAR_BLAST_SIEGE_FIRST  = 20 * IN_MILLISECONDS,
+    TIMER_MORTAR_BLAST_SIEGE        = 30 * IN_MILLISECONDS,
+
     TIMER_SIEGE_MODE_PREPARE        = 1 * IN_MILLISECONDS,
     TIMER_ASSAULT_MODE_PREPARE      = 1 * IN_MILLISECONDS,
     TIMER_ASSAULT_MODE_REGENERATE   = 1200,
@@ -172,11 +189,39 @@ enum Timers
 #define MAX_POWER_ENERGY 100
 #define POWER_TYPE POWER_ENERGY
 #define MAX_CRAWLER_MINES 3
+#define SCATTER_LASER_COUNT_10 1
+#define SCATTER_LASER_COUNT_25 3
 #define CUTTER_LASER_RADIUS 2.0f
 #define EXPLOSIVE_TAR_RADIUS 4.0f
 #define BOSS_COMBAT_REACH_SIZE 15.0f
 #define DEFAULT_RANGE_TARGETS_DIST 15.0f
 #define BOSS_RANGE_TARGETS_DIST (BOSS_COMBAT_REACH_SIZE - DEFAULT_RANGE_TARGETS_DIST)
+#define BORER_DRILL_COUNT 3
+#define RICOCHET_COUNT 2
+
+void GetPositionUnderJuggernautClaw(Creature* pJuggernaut, Position& pos, bool isLeft)
+{
+    if (isLeft)
+    {
+        pos = pJuggernaut->GetNearPosition(13.0f, 0.3f);
+        //pJuggernaut->GetNearPosition(pos, 13.0f, 0.3f);
+    }
+    else
+    {
+        pos = pJuggernaut->GetNearPosition(13.0f, -0.3f);
+        //pJuggernaut->GetNearPosition(pos, 13.0f, -0.3f);
+    }
+}
+
+Creature* GetIronJuggernaut(WorldObject* searcher)
+{
+    if (InstanceScript* pInstance = searcher->GetInstanceScript())
+    {
+        return pInstance->instance->GetCreature(pInstance->GetObjectGuid(DATA_IRON_JUGGERNAUT));
+    }
+
+    return NULL;
+}
 
 class boss_iron_juggernaut : public CreatureScript
 {
@@ -192,25 +237,11 @@ class boss_iron_juggernaut : public CreatureScript
         {
             boss_iron_juggernautAI(Creature* creature) : BossAI(creature, DATA_IRON_JUGGERNAUT)
             {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK_DEST, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_INTERRUPT, true);
-                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                //ApplyAllImmunities(true);
 
                 me->setActive(true);
-
-                me->SetFloatValue(UNIT_FIELD_BOUNDING_RADIUS, BOSS_COMBAT_REACH_SIZE);
-                me->SetFloatValue(UNIT_FIELD_COMBAT_REACH, BOSS_COMBAT_REACH_SIZE);
+                me->SetBoundingRadius(BOSS_COMBAT_REACH_SIZE);
+                me->SetCombatReach(BOSS_COMBAT_REACH_SIZE);
             }
 
             void Reset()
@@ -228,14 +259,22 @@ class boss_iron_juggernaut : public CreatureScript
 
             void EnterCombat(Unit* who)
             {
+                SendIronJuggernautStart();
+
                 m_CurrentPhase = PHASE_ASSAULT;
 
-                events.ScheduleEvent(EVENT_BERSERK, TIMER_BERSERK);
+                events.ScheduleEvent(EVENT_BERSERK, IsHeroic() ? TIMER_BERSERK_HEROIC : TIMER_BERSERK_NORMAL);
                 events.ScheduleEvent(EVENT_FLAME_VENTS, TIMER_FLAME_VENTS_FIRST);
                 events.ScheduleEvent(EVENT_BORER_DRILL, TIMER_BORER_DRILL);
                 events.ScheduleEvent(EVENT_MORTAR_BLAST, TIMER_MORTAR_BLAST);
                 events.ScheduleEvent(EVENT_SCATTER_LASER, TIMER_SCATTER_LASER);
                 events.ScheduleEvent(EVENT_CRAWLER_MINE, TIMER_CRAWLER_MINE);
+                events.ScheduleEvent(EVENT_DEMOLISHER_CANNONS, TIMER_DEMOLISHER_CANNONS);
+
+                if (IsHeroic())
+                {
+                    events.ScheduleEvent(EVENT_RICOCHET, TIMER_RICOCHET_FIRST);
+                }
 
                 instance->SetBossState(DATA_IRON_JUGGERNAUT, IN_PROGRESS);
                 DoZoneInCombat();
@@ -246,7 +285,7 @@ class boss_iron_juggernaut : public CreatureScript
                 value = 0;
             }
 
-            void SetGUID(uint64 guid, int32 id) override
+            void SetObjectGuid(ObjectGuid guid, int32 id)
             {
                 if (id == DATA_CRAWLER_MINE_DUMMY)
                 {
@@ -254,8 +293,20 @@ class boss_iron_juggernaut : public CreatureScript
                 }
             }
 
+            void SummonedCreatureDespawn(Creature* summon) override
+            {
+                if (summon->GetEntry() == NPC_SAWBLADE_2)
+                {
+                    DoCast(me, SPELL_DISAPPEAR_REMOVE, true);
+                }
+
+                BossAI::SummonedCreatureDespawn(summon);
+            }
+
             void JustDied(Unit* who)
             {
+                SendIronJuggernautDead();
+
                 _JustDied();
             }
 
@@ -310,11 +361,17 @@ class boss_iron_juggernaut : public CreatureScript
                         break;
                     case EVENT_CRAWLER_MINE:
                         DoCastAOE(SPELL_CRAWLER_MINE_AOE);
-                        events.ScheduleEvent(EVENT_CRAWLER_MINE, TIMER_CRAWLER_MINE);
+                        if (IsInAssaultPhase())
+                            events.ScheduleEvent(EVENT_CRAWLER_MINE, TIMER_CRAWLER_MINE);
+                        break;
+                    case EVENT_RICOCHET:
+                        DoRicochet();
+                        events.ScheduleEvent(EVENT_RICOCHET, TIMER_RICOCHET);
                         break;
                     case EVENT_SHOCK_PULSE:
                         DoCastAOE(SPELL_SHOCK_PULSE);
                         events.ScheduleEvent(EVENT_SHOCK_PULSE, TIMER_SHOCK_PULSE);
+                        events.ScheduleEvent(EVENT_CRAWLER_MINE, TIMER_CRAWLER_MINE_SIEGE_MODE);
                         break;
                     case EVENT_DEMOLISHER_CANNONS:
                         DemolisherCannons();
@@ -326,6 +383,10 @@ class boss_iron_juggernaut : public CreatureScript
                     case EVENT_EXPLOSIVE_TAR:
                         DoCast(me, SPELL_EXPLOSIVE_TAR_PERIODIC);
                         events.ScheduleEvent(EVENT_EXPLOSIVE_TAR, TIMER_EXPLOSIVE_TAR);
+                        break;
+                    case EVENT_MORTAR_BLAST_SIEGE_MODE:
+                        DoMortarBlastSiege();
+                        events.ScheduleEvent(EVENT_MORTAR_BLAST_SIEGE_MODE, TIMER_MORTAR_BLAST_SIEGE);
                         break;
                     case EVENT_SIEGE_MODE_PREPARE:
                         ShiftIntoSiegeMode();
@@ -352,7 +413,7 @@ class boss_iron_juggernaut : public CreatureScript
 
             void InitPowers()
             {
-                me->setPowerType(POWER_TYPE);
+                me->SetPowerType(POWER_TYPE);
                 me->SetMaxPower(POWER_TYPE, MAX_POWER_ENERGY);
                 me->SetPower(POWER_TYPE, 0);
 
@@ -438,15 +499,20 @@ class boss_iron_juggernaut : public CreatureScript
             void DoBorerDrill()
             {
                 Position pos;
-                me->GetNearPosition(pos, 13.0f, -0.3f);
+                GetPositionUnderJuggernautClaw(me, pos, false);
 
                 DoCast(me, SPELL_BORER_DRILL_VISUAL_1, true);
-                me->CastSpell(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), SPELL_BORER_DRILL, false);
+                me->CastSpell(pos, SPELL_BORER_DRILL, false);
             }
 
-            void SpawnCrawlerMine(uint64 targetCreatureGuid)
+            void DoRicochet()
             {
-                if (Unit* target = Unit::GetUnit(*me, targetCreatureGuid))
+                DoCast(me, SPELL_RICOCHET_AREAGRIGGER);
+            }
+
+            void SpawnCrawlerMine(ObjectGuid targetCreatureGuid)
+            {
+                if (Unit* target = ObjectAccessor::GetUnit(*me, targetCreatureGuid))
                 {
                     if (Creature* pMine = me->SummonCreature(NPC_CRAWLER_MINE, *me, TEMPSUMMON_TIMED_DESPAWN, 60000))
                     {
@@ -469,6 +535,11 @@ class boss_iron_juggernaut : public CreatureScript
                 summons.DoAction(ACTION_CUTTER_LASER, pred);
             }
 
+            void DoMortarBlastSiege()
+            {
+                DoCastAOE(SPELL_MORTAR_BLAST_FORCE_2);
+            }
+
             void ShiftIntoSiegeMode()
             {
                 m_CurrentPhase = PHASE_SIEGE;
@@ -483,6 +554,8 @@ class boss_iron_juggernaut : public CreatureScript
                 events.CancelEvent(EVENT_SCATTER_LASER);
                 events.CancelEvent(EVENT_MORTAR_BLAST);
                 events.CancelEvent(EVENT_CRAWLER_MINE);
+                events.CancelEvent(EVENT_DEMOLISHER_CANNONS);
+                events.CancelEvent(EVENT_RICOCHET);
 
                 DoCast(me, SPELL_SEISMIC_ACTIVITY);
 
@@ -490,6 +563,11 @@ class boss_iron_juggernaut : public CreatureScript
                 events.ScheduleEvent(EVENT_DEMOLISHER_CANNONS, TIMER_DEMOLISHER_CANNONS);
                 events.ScheduleEvent(EVENT_CUTTER_LASER, TIMER_CUTTER_LASER);
                 events.ScheduleEvent(EVENT_EXPLOSIVE_TAR, TIMER_EXPLOSIVE_TAR_FIRST);
+
+                if (IsHeroic())
+                {
+                    events.ScheduleEvent(EVENT_MORTAR_BLAST_SIEGE_MODE, TIMER_MORTAR_BLAST_SIEGE_FIRST);
+                }
             }
 
             void ShiftIntoAssaultMode()
@@ -497,7 +575,7 @@ class boss_iron_juggernaut : public CreatureScript
                 m_CurrentPhase = PHASE_ASSAULT;
 
                 me->SetReactState(REACT_AGGRESSIVE);
-                AttackStart(me->getVictim());
+                AttackStart(me->GetVictim());
 
                 me->RemoveAura(SPELL_DEPLETION);
                 me->RemoveAura(SPELL_SEISMIC_ACTIVITY);
@@ -506,12 +584,20 @@ class boss_iron_juggernaut : public CreatureScript
                 events.CancelEvent(EVENT_DEMOLISHER_CANNONS);
                 events.CancelEvent(EVENT_CUTTER_LASER);
                 events.CancelEvent(EVENT_EXPLOSIVE_TAR);
+                events.CancelEvent(EVENT_CRAWLER_MINE);
+                events.CancelEvent(EVENT_MORTAR_BLAST_SIEGE_MODE);
 
                 events.ScheduleEvent(EVENT_FLAME_VENTS, TIMER_FLAME_VENTS_FIRST);
                 events.ScheduleEvent(EVENT_BORER_DRILL, TIMER_BORER_DRILL);
                 events.ScheduleEvent(EVENT_MORTAR_BLAST, TIMER_MORTAR_BLAST);
                 events.ScheduleEvent(EVENT_SCATTER_LASER, TIMER_SCATTER_LASER);
                 events.ScheduleEvent(EVENT_CRAWLER_MINE, TIMER_CRAWLER_MINE);
+                events.ScheduleEvent(EVENT_DEMOLISHER_CANNONS, TIMER_DEMOLISHER_CANNONS);
+
+                if (IsHeroic())
+                {
+                    events.ScheduleEvent(EVENT_RICOCHET, TIMER_RICOCHET_FIRST);
+                }
             }
 
             bool IsFarFromHomePosition() const
@@ -523,6 +609,16 @@ class boss_iron_juggernaut : public CreatureScript
                 }
 
                 return false;
+            }
+
+            void SendIronJuggernautStart()
+            {
+                instance->SetData(DATA_IRON_JUGGERNAUT_START, DONE);
+            }
+
+            void SendIronJuggernautDead()
+            {
+                instance->SetData(DATA_IRON_JUGGERNAUT_DEAD, DONE);
             }
 
         private:
@@ -548,8 +644,8 @@ class npc_iron_juggernaut_cannons : public CreatureScript
             {
                 me->SetReactState(REACT_PASSIVE);
 
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC);
-            
+                me->SetUnitFlags(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
+
                 pInstance = creature->GetInstanceScript();
             }
 
@@ -563,18 +659,6 @@ class npc_iron_juggernaut_cannons : public CreatureScript
                 {
                     CutterLaser();
                 }
-            }
-
-        private:
-
-            Creature* GetIronJuggernaut()
-            {
-                if (pInstance)
-                {
-                    return pInstance->instance->GetCreature(pInstance->GetData64(DATA_IRON_JUGGERNAUT));
-                }
-
-                return NULL;
             }
 
             void DemolisherCannons()
@@ -591,7 +675,7 @@ class npc_iron_juggernaut_cannons : public CreatureScript
                 if (me->GetEntry() != NPC_TAIL_GUN)
                     return;
 
-                Creature* pJuggernaut = GetIronJuggernaut();
+                Creature* pJuggernaut = GetIronJuggernaut(me);
                 if (!pJuggernaut)
                     return;
 
@@ -602,8 +686,8 @@ class npc_iron_juggernaut_cannons : public CreatureScript
 
                 if (target)
                 {
-                    Position pos;
-                    target->GetRandomNearPosition(pos, 3.0f);
+                    Position pos = target->GetRandomNearPosition(3.0f);
+                    //target->GetRandomNearPosition(pos, 3.0f);
 
                     if (Creature* pLaser = pJuggernaut->SummonCreature(NPC_CUTTER_LASER, pos, TEMPSUMMON_TIMED_DESPAWN, 10000))
                     {
@@ -635,24 +719,33 @@ class npc_iron_juggernaut_borer_drill : public CreatureScript
 
         struct npc_iron_juggernaut_borer_drillAI : public ScriptedAI
         {
-            npc_iron_juggernaut_borer_drillAI(Creature* creature) : ScriptedAI(creature)
+            npc_iron_juggernaut_borer_drillAI(Creature* creature) : ScriptedAI(creature),
+                m_TargetGuid(ObjectGuid::Empty)
             {
                 me->SetReactState(REACT_PASSIVE);
 
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC);
+                me->SetUnitFlags(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
             }
 
-            void Reset()
+            void Reset() override
             {
                 me->AddAura(SPELL_BORER_DRILL_AURA, me);
 
-                me->SetSpeed(MOVE_RUN, 0.4f, true);
+                me->SetSpeed(MOVE_RUN, 0.4f);
 
                 moveTimer = 3000;
                 isMoved = false;
             }
 
-            void UpdateAI(const uint32 diff)
+            void SetGUID(ObjectGuid guid, int32 type)
+            {
+                if (type == DATA_BORER_DRILL_TARGET)
+                {
+                    m_TargetGuid = guid;
+                }
+            }
+
+            void UpdateAI(const uint32 diff) override
             {
                 UpdateMove(diff);
             }
@@ -666,11 +759,7 @@ class npc_iron_juggernaut_borer_drill : public CreatureScript
 
                 if (moveTimer <= diff)
                 {
-                    Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, -20.0f, true);
-                    if (!target)
-                        target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true);
-
-                    if (target)
+                    if (Unit* target = ObjectAccessor::GetUnit(*me, m_TargetGuid))
                     {
                         me->GetMotionMaster()->MoveFollow(target, 0.0f, 0.0f);
                     }
@@ -687,6 +776,7 @@ class npc_iron_juggernaut_borer_drill : public CreatureScript
 
             uint32 moveTimer;
             bool isMoved;
+            ObjectGuid m_TargetGuid;
         };
 };
 
@@ -706,24 +796,16 @@ class npc_iron_juggernaut_crawler_mine_dummy : public CreatureScript
             {
                 me->SetReactState(REACT_PASSIVE);
 
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC);
+                me->SetUnitFlags(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
             }
 
             void IsSummonedBy(Unit* owner)
             {
-                if (InstanceScript* pInstance = me->GetInstanceScript())
+                if (Creature* pJuggernaut = GetIronJuggernaut(me))
                 {
-                    if (Creature* pJuggernaut = pInstance->instance->GetCreature(pInstance->GetData64(DATA_IRON_JUGGERNAUT)))
-                    {
-                        pJuggernaut->AI()->SetGUID(me->GetGUID(), DATA_CRAWLER_MINE_DUMMY);
-                    }
+                    pJuggernaut->AI()->SetGUID(me->GetGUID(), DATA_CRAWLER_MINE_DUMMY);
                 }
             }
-
-        private:
-
-        private:
-
         };
 };
 
@@ -742,15 +824,14 @@ class npc_iron_juggernaut_crawler_mine : public CreatureScript
             npc_iron_juggernaut_crawler_mineAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
+                //ApplyAllImmunities(true);
 
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, false);
+            }
 
-                me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-                me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_CLIENT_CANNOT_TARGET);
-
-                isExploded = false;
-                beforeExplodeTimer = 14000;
-                me->setFaction(35);
+            void DamageTaken(Unit* who, uint32& damage) override
+            {
+                damage = 0;
             }
 
             void MovementInform(uint32 type, uint32 id)
@@ -760,53 +841,33 @@ class npc_iron_juggernaut_crawler_mine : public CreatureScript
                     me->GetMotionMaster()->MovementExpired(false);
                     DoCast(SPELL_DETONATION_SEQUENCE);
 
-                    // reinit timer
-                    beforeExplodeTimer = 14000;
+                    me->SetUnitFlags(UnitFlags(UNIT_NPC_FLAG_SPELLCLICK));
                 }
             }
 
-            void OnSpellClick(Unit* clicker)
+            void OnSpellClick(Unit* clicker, bool& /*result*/)
             {
                 if (isExploded)
                     return;
 
                 isExploded = true;
 
-                me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+                me->RemoveUnitFlag(UnitFlags(UNIT_NPC_FLAG_SPELLCLICK));
 
-                clicker->CastSpell(me, SPELL_GROUND_POUND, true);
+                if (clicker->GetExactDist(me) >= 1.f)
+                {
+                    clicker->CastSpell(me, SPELL_GROUND_POUND, true);
+                }
+                else
+                {
+                    clicker->CastSpell(me, SPELL_ENGULFED_EXPLOSION_DMG, true);
+                }
 
                 me->DespawnOrUnsummon(1000);
             }
 
-            void UpdateAI(const uint32 diff)
-            {
-                UpdateBeforeExplode(diff);
-            }
-
         private:
-
-            void UpdateBeforeExplode(const uint32 diff)
-            {
-                if (isExploded)
-                    return;
-
-                if (beforeExplodeTimer <= diff)
-                {
-                    me->setFaction(14);
-                    isExploded = true;
-                }
-                else
-                {
-                    beforeExplodeTimer -= diff;
-                }
-            }
-
-        private:
-
-            uint32 beforeExplodeTimer;
-            bool isExploded;
-
+            bool isExploded = false;
         };
 };
 
@@ -826,22 +887,22 @@ class npc_iron_juggernaut_cutter_laser : public CreatureScript
             {
                 me->SetReactState(REACT_PASSIVE);
 
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC);
+                me->SetUnitFlags(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
 
-                targetGuid = 0;
+                targetGuid = ObjectGuid::Empty;
 
                 damageTimer = 2000;
             }
 
             void Reset()
             {
-                me->SetSpeed(MOVE_RUN, 0.5f, true);
+                me->SetSpeed(MOVE_RUN, 0.5f);
 
                 moveTimer = 2000;
                 isMoved = false;
             }
 
-            void SetGUID(uint64 guid, int32 id) override
+            void SetGUID(ObjectGuid guid, int32 id) override
             {
                 if (id == DATA_CUTTER_LASER_GUID)
                 {
@@ -865,9 +926,9 @@ class npc_iron_juggernaut_cutter_laser : public CreatureScript
 
                 if (moveTimer <= diff)
                 {
-                    if (Unit* target = me->GetUnit(*me, targetGuid))
+                    if (Unit* target = ObjectAccessor::GetUnit(*me, targetGuid))
                     {
-                        me->GetMotionMaster()->MoveFollowExact(target, 0.0f, 0.0f);
+                        me->GetMotionMaster()->MoveFollow(target, 0.0f, 0.0f);
                     }
 
                     isMoved = true;
@@ -909,7 +970,7 @@ class npc_iron_juggernaut_cutter_laser : public CreatureScript
 
         private:
 
-            uint64 targetGuid;
+            ObjectGuid targetGuid;
             uint32 moveTimer;
             uint32 damageTimer;
             bool isMoved;
@@ -932,7 +993,7 @@ class npc_iron_juggernaut_explosive_tar : public CreatureScript
             {
                 me->SetReactState(REACT_PASSIVE);
 
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC);
+                me->SetUnitFlags(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
 
                 damageTimer = 2000;
                 checkLaserTimer = 2000;
@@ -969,13 +1030,15 @@ class npc_iron_juggernaut_explosive_tar : public CreatureScript
 
             void DoDamageToNearestPlayers()
             {
+                SpellInfo const* explosiveTarDmg = sSpellMgr->GetSpellInfo(SPELL_EXPLOSIVE_TAR_DMG, DIFFICULTY_NONE);
+
                 std::list<Player*> players;
                 me->GetPlayerListInGrid(players, EXPLOSIVE_TAR_RADIUS);
 
                 for (Player* player : players)
                 {
                     if (!player->HasAura(SPELL_EXPLOSIVE_TAR_DMG))
-                        me->AddAura(SPELL_EXPLOSIVE_TAR_DMG, player);
+                        me->AddAura(explosiveTarDmg, MAX_EFFECT_MASK, player);
                 }
             }
 
@@ -1009,10 +1072,188 @@ class npc_iron_juggernaut_explosive_tar : public CreatureScript
         };
 };
 
+/// Sawblade - 71945
+class npc_iron_juggernaut_sawblade_ricochet : public CreatureScript
+{
+    public:
+        npc_iron_juggernaut_sawblade_ricochet() : CreatureScript("npc_iron_juggernaut_sawblade_ricochet") { }
+
+        CreatureAI* GetAI(Creature* creature) const
+        {
+            return new npc_iron_juggernaut_sawblade_ricochetAI(creature);
+        }
+
+        struct npc_iron_juggernaut_sawblade_ricochetAI : public ScriptedAI
+        {
+            npc_iron_juggernaut_sawblade_ricochetAI(Creature* creature) : ScriptedAI(creature)
+            {
+                me->SetReactState(REACT_PASSIVE);
+
+                me->SetUnitFlags(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
+
+                me->SetDisableGravity(true);
+                me->SetDisplayId(11686);
+            }
+
+            /*void SplineMovementUpdate(uint32 type, uint32 id) override
+            {
+                if (type == Movement::MoveSpline::UpdateResult::Result_Arrived)
+                {
+                    me->DespawnOrUnsummon(100);
+                }
+            }*/
+
+            void MovementInform(uint32 type, uint32 id) override
+            {
+                if (type == Movement::MoveSpline::UpdateResult::Result_Arrived)
+                {
+                    me->DespawnOrUnsummon(100);
+                }
+            }
+
+            void Reset() override
+            {
+                me->SetSpeed(MOVE_RUN, 0.4f);
+
+                m_MoveTimer = 1000;
+                m_isMoved = false;
+            }
+
+            void UpdateAI(const uint32 diff) override
+            {
+                UpdateMove(diff);
+
+                UpdateTargets(diff);
+            }
+
+        private:
+
+            void UpdateMove(const uint32 diff)
+            {
+                if (m_isMoved)
+                    return;
+
+                if (m_MoveTimer <= diff)
+                {
+                    m_isMoved = true;
+
+                    me->AddAura(SPELL_RICOCHET_AURA, me);
+
+                    Creature* pJaggernaut = GetIronJuggernaut(me);
+                    if (!pJaggernaut)
+                        return;
+
+                    Position spawnPos;
+                    GetPositionUnderJuggernautClaw(pJaggernaut, spawnPos, true);
+
+                    std::list<Unit*> targets;
+                    pJaggernaut->AI()->SelectTargetList(targets, RICOCHET_COUNT, SELECT_TARGET_RANDOM, -BOSS_RANGE_TARGETS_DIST, true);
+                    if (targets.size() < RICOCHET_COUNT)
+                        pJaggernaut->AI()->SelectTargetList(targets, RICOCHET_COUNT, SELECT_TARGET_RANDOM, 0.0f, true);
+
+                    if (targets.size() > RICOCHET_COUNT)
+                        Trinity::Containers::RandomResize(targets, RICOCHET_COUNT);
+
+                    Movement::MoveSplineInit init(me);
+
+                    init.Path().push_back(G3D::Vector3(spawnPos.GetPositionX(), spawnPos.GetPositionY(), spawnPos.GetPositionZ()));
+
+                    // Use spawnPos.GetPositionZ()
+                    for (auto target : targets)
+                        init.Path().push_back(G3D::Vector3(target->GetPositionX(), target->GetPositionY(), spawnPos.GetPositionZ()));
+
+                    init.Path().push_back(G3D::Vector3(spawnPos.GetPositionX(), spawnPos.GetPositionY(), spawnPos.GetPositionZ()));
+
+                    init.SetWalk(false);
+                    init.SetSmooth();
+                    init.SetVelocity(20.f);
+                    init.Launch();
+                }
+                else
+                {
+                    m_MoveTimer -= diff;
+                }
+            }
+
+            void UpdateTargets(const uint32 diff)
+            {
+                if (!m_isMoved/* || !me->isMoving()*/)
+                    return;
+
+                if (m_UpdateTargetsTimer <= diff)
+                {
+                    m_UpdateTargetsTimer = 100;
+
+                    std::list<Player*> targets;
+                    GetTargets(targets);
+
+                    for (auto target : targets)
+                    {
+                        m_HitTargets.insert(target->GetGUID());
+
+                        target->CastSpell(target, SPELL_RICOCHET_DMG, true);
+                    }
+                }
+                else
+                {
+                    m_UpdateTargetsTimer -= diff;
+                }
+            }
+
+            void GetTargets(std::list<Player*>& players)
+            {
+                SawbladeRicochetCheck checker(me, 10.f, 2.f, &m_HitTargets);
+                Trinity::PlayerListSearcher<SawbladeRicochetCheck> searcher(me, players, checker);
+                //me->VisitNearbyWorldObject(10.f, searcher);
+                Cell::VisitWorldObjects(me, searcher, 10.f);
+            }
+
+        private:
+
+            uint32 m_MoveTimer;
+            uint32 m_UpdateTargetsTimer = 100;
+            bool m_isMoved;
+            std::set<ObjectGuid> m_HitTargets;
+
+        private:
+
+            class SawbladeRicochetCheck
+            {
+                public:
+
+                    SawbladeRicochetCheck(WorldObject const* obj, float length, float width, std::set<ObjectGuid> const* skipGuids) : m_Obj(obj), m_Length(length), m_Width(width), m_SkipGuids(skipGuids) {}
+
+                    bool operator()(Player* u)
+                    {
+                        if (m_SkipGuids->find(u->GetGUID()) != m_SkipGuids->end())
+                            return false;
+
+                        if (!u->IsAlive())
+                            return false;
+
+                        float angle = m_Obj->GetRelativeAngle(u);
+                        if (!(fabs(sin(angle)) * m_Obj->GetExactDist2d(u->GetPositionX(), u->GetPositionY()) < m_Width))
+                            return false;
+
+                        if (m_Obj->GetExactDist(u) > m_Length)
+                            return false;
+
+                        return true;
+                    }
+
+                private:
+                    WorldObject const* m_Obj;
+                    float m_Length;
+                    float m_Width;
+                    std::set<ObjectGuid> const* m_SkipGuids;
+            };
+        };
+};
+
 class EntryCheck
 {
     public:
-        
+
         EntryCheck(uint32 entry) : m_Entry(entry) { }
 
         bool operator()(WorldObject* object) const
@@ -1044,9 +1285,28 @@ class spell_iron_juggernaut_borer_drill : public SpellScriptLoader
 
                 if (WorldLocation const* worldLocation = GetHitDest())
                 {
-                    Position pos;
-                    worldLocation->GetPosition(&pos);
-                    GetCaster()->SummonCreature(NPC_BORER_DRILL, pos, TEMPSUMMON_TIMED_DESPAWN, 20000);
+                    Position pos = worldLocation->GetPosition();
+
+                    std::list<Unit*> targets;
+
+                    if (Creature* pCreature = GetCaster()->ToCreature())
+                    {
+                         // boss's size is 16.f, so -1.0f is like -17.0f
+                        pCreature->AI()->SelectTargetList(targets, BORER_DRILL_COUNT, SELECT_TARGET_RANDOM, -BOSS_RANGE_TARGETS_DIST, true);
+
+                        if (targets.size() < BORER_DRILL_COUNT)
+                        {
+                            pCreature->AI()->SelectTargetList(targets, BORER_DRILL_COUNT, SELECT_TARGET_RANDOM, 15.0f, true);
+                        }
+                    }
+
+                    for (auto target : targets)
+                    {
+                        if (Creature* pDrill = GetCaster()->SummonCreature(NPC_BORER_DRILL, pos, TEMPSUMMON_TIMED_DESPAWN, 20000))
+                        {
+                            pDrill->AI()->SetGUID(target->GetGUID(), DATA_BORER_DRILL_TARGET);
+                        }
+                    }
                 }
             }
 
@@ -1102,32 +1362,7 @@ class spell_iron_juggernaut_mortar_blast_aoe : public SpellScriptLoader
                 if (!GetCaster())
                     return;
 
-                std::list<WorldObject*> rangeTargets;
-
-                for (auto target : targets)
-                {
-                    if (GetCaster()->GetDistance(target) >= DEFAULT_RANGE_TARGETS_DIST)
-                    {
-                        rangeTargets.push_back(target);
-                    }
-                }
-
-                WorldObject* target = NULL;
-
-                if (!rangeTargets.empty())
-                {
-                    target = MoPCore::Containers::SelectRandomContainerElement(rangeTargets);
-                }
-                else if (!targets.empty())
-                {
-                    target = MoPCore::Containers::SelectRandomContainerElement(targets);
-                }
-
-                if (target)
-                {
-                    targets.clear();
-                    targets.push_back(target);
-                }
+                Trinity::Containers::RandomResize(targets, 1);
             }
 
             void HandleHitTarget(SpellEffIndex effIndex)
@@ -1135,7 +1370,7 @@ class spell_iron_juggernaut_mortar_blast_aoe : public SpellScriptLoader
                 if (!GetCaster() || !GetHitUnit())
                     return;
 
-                GetCaster()->CastSpell(GetHitUnit(), SPELL_MORTAR_BLAST_MISSILE, true);
+                GetCaster()->CastSpell(GetHitUnit()->GetPositionX(), GetHitUnit()->GetPositionY(), GetHitUnit()->GetPositionZ(), SPELL_MORTAR_BLAST_MISSILE, true);
             }
 
             void Register()
@@ -1148,6 +1383,107 @@ class spell_iron_juggernaut_mortar_blast_aoe : public SpellScriptLoader
         SpellScript* GetSpellScript() const
         {
             return new spell_iron_juggernaut_mortar_blast_aoe_SpellScript();
+        }
+};
+
+class spell_iron_juggernaut_mortar_blast_dmg : public SpellScriptLoader
+{
+    public:
+        spell_iron_juggernaut_mortar_blast_dmg() : SpellScriptLoader("spell_iron_juggernaut_mortar_blast_dmg") { }
+
+        class spell_iron_juggernaut_mortar_blast_dmg_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_iron_juggernaut_mortar_blast_dmg_SpellScript);
+
+            void HandleHitTarget(SpellEffIndex effIndex)
+            {
+                if (!GetHitUnit())
+                    return;
+
+                // There is a some bug in the spell
+                // Players can leave a target circle, but they will be damaged anyway
+                // because targets are selected in the 'launch phase'.
+                // So recheck distance in the 'hit phase'
+                if (WorldLocation* loc = GetHitDest())
+                {
+                    if (GetHitUnit()->GetExactDist(loc) >= 8.0f)
+                    {
+                        PreventHitDefaultEffect(effIndex);
+                        PreventHitDamage();
+                    }
+                }
+            }
+
+            void Register()
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_iron_juggernaut_mortar_blast_dmg_SpellScript::HandleHitTarget, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+            }
+        };
+
+        SpellScript* GetSpellScript() const
+        {
+            return new spell_iron_juggernaut_mortar_blast_dmg_SpellScript();
+        }
+};
+
+class spell_iron_juggernaut_mortar_blast_siege_force : public SpellScriptLoader
+{
+    public:
+        spell_iron_juggernaut_mortar_blast_siege_force() : SpellScriptLoader("spell_iron_juggernaut_mortar_blast_siege_force") { }
+
+        class spell_iron_juggernaut_mortar_blast_siege_force_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_iron_juggernaut_mortar_blast_siege_force_SpellScript);
+
+            void FilterTargets(std::list<WorldObject*>& targets)
+            {
+                targets.remove_if(EntryCheck(NPC_TOP_CANNON));
+            }
+
+            void Register()
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_iron_juggernaut_mortar_blast_siege_force_SpellScript::FilterTargets, EFFECT_0,  TARGET_UNIT_SRC_AREA_ENTRY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const
+        {
+            return new spell_iron_juggernaut_mortar_blast_siege_force_SpellScript();
+        }
+};
+
+class spell_iron_juggernaut_mortar_blast_siege_periodic : public SpellScriptLoader
+{
+    public:
+        spell_iron_juggernaut_mortar_blast_siege_periodic() : SpellScriptLoader("spell_iron_juggernaut_mortar_blast_siege_periodic") { }
+
+        class spell_iron_juggernaut_mortar_blast_siege_periodic_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_iron_juggernaut_mortar_blast_siege_periodic_AuraScript);
+
+            void HandlePeriodicTick(AuraEffect const* aurEff)
+            {
+                if (!GetUnitOwner())
+                    return;
+
+                if (Creature* pCreature = GetIronJuggernaut(GetUnitOwner()))
+                {
+                    if (Unit* target = pCreature->AI()->SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                    {
+                        GetUnitOwner()->CastSpell(target, SPELL_MORTAR_BLAST_MISSILE_2, true);
+                    }
+                }
+            }
+
+            void Register()
+            {
+                OnEffectPeriodic += AuraEffectPeriodicFn(spell_iron_juggernaut_mortar_blast_siege_periodic_AuraScript::HandlePeriodicTick, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const
+        {
+            return new spell_iron_juggernaut_mortar_blast_siege_periodic_AuraScript();
         }
 };
 
@@ -1177,6 +1513,41 @@ class spell_iron_juggernaut_scatter_laser_force : public SpellScriptLoader
         }
 };
 
+class spell_iron_juggernaut_scatter_laser_force2 : public SpellScriptLoader
+{
+    public:
+        spell_iron_juggernaut_scatter_laser_force2() : SpellScriptLoader("spell_iron_juggernaut_scatter_laser_force2") { }
+
+        class spell_iron_juggernaut_scatter_laser_force2_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_iron_juggernaut_scatter_laser_force2_SpellScript);
+
+            void FilterTargets(std::list<WorldObject*>& targets)
+            {
+                if (!GetCaster())
+                    return;
+
+                const uint32 targetsCount = GetCaster()->GetMap()->Is25ManRaid() ? SCATTER_LASER_COUNT_25 : SCATTER_LASER_COUNT_10;
+
+                if (targets.size() > targetsCount)
+                {
+                    Trinity::Containers::RandomResize(targets, targetsCount);
+                }
+            }
+
+            void Register()
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_iron_juggernaut_scatter_laser_force2_SpellScript::FilterTargets, EFFECT_0,  TARGET_UNIT_SRC_AREA_ENEMY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_iron_juggernaut_scatter_laser_force2_SpellScript::FilterTargets, EFFECT_1,  TARGET_UNIT_SRC_AREA_ENEMY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const
+        {
+            return new spell_iron_juggernaut_scatter_laser_force2_SpellScript();
+        }
+};
+
 class spell_iron_juggernaut_crawler_mine_aoe : public SpellScriptLoader
 {
     public:
@@ -1196,7 +1567,7 @@ class spell_iron_juggernaut_crawler_mine_aoe : public SpellScriptLoader
                     std::list<Unit*> rangeTargets;
                     // boss's size is 16.f, so -1.0f is like -17.0f
                     pJaggernaut->AI()->SelectTargetList(rangeTargets, MAX_CRAWLER_MINES, SELECT_TARGET_RANDOM, -BOSS_RANGE_TARGETS_DIST, true);
-                    
+
                     if (rangeTargets.size() < MAX_CRAWLER_MINES)
                     {
                         pJaggernaut->AI()->SelectTargetList(rangeTargets, MAX_CRAWLER_MINES, SELECT_TARGET_RANDOM, 15.0f, true);
@@ -1238,7 +1609,7 @@ class spell_iron_juggernaut_detonation_sequence : public SpellScriptLoader
         {
             PrepareAuraScript(spell_iron_juggernaut_detonation_sequence_AuraScript);
 
-            void HandlePeriodicTick(constAuraEffectPtr aurEff)
+            void HandlePeriodicTick(AuraEffect const* aurEff)
             {
                 if (!GetUnitOwner())
                     return;
@@ -1272,11 +1643,7 @@ class spell_iron_juggernaut_demolisher_cannons_aoe : public SpellScriptLoader
                 if (!GetCaster())
                     return;
 
-                InstanceScript* pInstance = GetCaster()->GetInstanceScript();
-                if (!pInstance)
-                    return;
-
-                Creature* pJaggernaut = pInstance->instance->GetCreature(pInstance->GetData64(DATA_IRON_JUGGERNAUT));
+                Creature* pJaggernaut = GetIronJuggernaut(GetCaster());
                 if (!pJaggernaut)
                     return;
 
@@ -1285,7 +1652,7 @@ class spell_iron_juggernaut_demolisher_cannons_aoe : public SpellScriptLoader
                 std::list<Unit*> rangeTargets;
                 // boss's size is 16.f, so -1.0f is like -17.0f
                 pJaggernaut->AI()->SelectTargetList(rangeTargets, maxTargetsCount, SELECT_TARGET_RANDOM, -BOSS_RANGE_TARGETS_DIST, true);
-                    
+
                 if (rangeTargets.size() < maxTargetsCount)
                 {
                     pJaggernaut->AI()->SelectTargetList(rangeTargets, maxTargetsCount, SELECT_TARGET_RANDOM, 15.0f, true);
@@ -1293,7 +1660,7 @@ class spell_iron_juggernaut_demolisher_cannons_aoe : public SpellScriptLoader
 
                 targets.clear();
                 for (auto target : rangeTargets)
-                    targets.push_back(target); 
+                    targets.push_back(target);
             }
 
             void HandleHitTarget(SpellEffIndex effIndex)
@@ -1301,7 +1668,7 @@ class spell_iron_juggernaut_demolisher_cannons_aoe : public SpellScriptLoader
                 if (!GetCaster() || !GetHitUnit())
                     return;
 
-                GetCaster()->CastSpell(GetHitUnit(), SPELL_DEMOLISHER_CANNONS_MISSILE, true);
+                GetCaster()->CastSpell(GetHitUnit()->GetPositionX(), GetHitUnit()->GetPositionY(), GetHitUnit()->GetPositionZ(), SPELL_DEMOLISHER_CANNONS_MISSILE, true);
             }
 
             void Register()
@@ -1314,6 +1681,46 @@ class spell_iron_juggernaut_demolisher_cannons_aoe : public SpellScriptLoader
         SpellScript* GetSpellScript() const
         {
             return new spell_iron_juggernaut_demolisher_cannons_aoe_SpellScript();
+        }
+};
+
+class spell_iron_juggernaut_demolisher_cannons_dmg : public SpellScriptLoader
+{
+    public:
+        spell_iron_juggernaut_demolisher_cannons_dmg() : SpellScriptLoader("spell_iron_juggernaut_demolisher_cannons_dmg") { }
+
+        class spell_iron_juggernaut_demolisher_cannons_dmg_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_iron_juggernaut_demolisher_cannons_dmg_SpellScript);
+
+            void HandleHitTarget(SpellEffIndex effIndex)
+            {
+                if (!GetHitUnit())
+                    return;
+
+                // There is a some bug in the spell
+                // Players can leave a target circle, but they will be damaged anyway
+                // because targets are selected in the 'launch phase'.
+                // So recheck distance in the 'hit phase'
+                if (WorldLocation* loc = GetHitDest())
+                {
+                    if (GetHitUnit()->GetExactDist(loc) >= 6.0f)
+                    {
+                        PreventHitDefaultEffect(effIndex);
+                        PreventHitDamage();
+                    }
+                }
+            }
+
+            void Register()
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_iron_juggernaut_demolisher_cannons_dmg_SpellScript::HandleHitTarget, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+            }
+        };
+
+        SpellScript* GetSpellScript() const
+        {
+            return new spell_iron_juggernaut_demolisher_cannons_dmg_SpellScript();
         }
 };
 
@@ -1330,7 +1737,7 @@ class spell_iron_juggernaut_cutter_laser_aoe : public SpellScriptLoader
             {
                 if (!GetCaster())
                     return;
-                
+
                 targets.remove_if(EntryCheck(NPC_TAIL_GUN));
             }
 
@@ -1364,7 +1771,7 @@ class spell_iron_juggernaut_cutter_laser_dmg : public SpellScriptLoader
         {
             PrepareAuraScript(spell_iron_juggernaut_cutter_laser_dmg_AuraScript);
 
-            void HandlePeriodicTick(constAuraEffectPtr aurEff)
+            void HandlePeriodicTick(AuraEffect const* aurEff)
             {
                 if (!GetUnitOwner())
                     return;
@@ -1396,7 +1803,7 @@ class spell_iron_juggernaut_explosive_tar_periodic : public SpellScriptLoader
         {
             PrepareAuraScript(spell_iron_juggernaut_explosive_tar_periodic_AuraScript);
 
-            void HandlePeriodicTick(constAuraEffectPtr aurEff)
+            void HandlePeriodicTick(AuraEffect const* aurEff)
             {
                 if (!GetUnitOwner())
                     return;
@@ -1410,14 +1817,15 @@ class spell_iron_juggernaut_explosive_tar_periodic : public SpellScriptLoader
                     // boss's size is 16.f, so -1.0f is like -17.0f
                     if (Unit* target = pJuggernaut->AI()->SelectTarget(SELECT_TARGET_RANDOM, 0, -BOSS_RANGE_TARGETS_DIST, true))
                     {
-                        target->GetPosition(&tarPos);
+                        tarPos = target->GetPosition();
+                        //target->GetPosition(&tarPos);
                     }
                     else
                     {
-                        pJuggernaut->GetRandomNearPosition(tarPos, 25.0f);
+                        tarPos = pJuggernaut->GetRandomNearPosition(25.0f);
                     }
 
-                    pJuggernaut->CastSpell(tarPos.GetPositionX(), tarPos.GetPositionY(), tarPos.GetPositionZ(), SPELL_EXPLOSIVE_TAR_MISSILE, true);
+                    pJuggernaut->CastSpell(tarPos, SPELL_EXPLOSIVE_TAR_MISSILE, true);
                 }
             }
 
@@ -1442,7 +1850,7 @@ class spell_iron_juggernaut_explosive_tar_dmg : public SpellScriptLoader
         {
             PrepareAuraScript(spell_iron_juggernaut_explosive_tar_dmg_AuraScript);
 
-            void HandlePeriodicTick(constAuraEffectPtr aurEff)
+            void HandlePeriodicTick(AuraEffect const* aurEff)
             {
                 if (!GetUnitOwner())
                     return;
@@ -1465,7 +1873,69 @@ class spell_iron_juggernaut_explosive_tar_dmg : public SpellScriptLoader
         }
 };
 
-void AddSC_iron_juggernaut()
+/// 144356 - Ricochet
+class spell_iron_juggernaut_ricochet : public SpellScriptLoader
+{
+public:
+    spell_iron_juggernaut_ricochet() : SpellScriptLoader("spell_iron_juggernaut_ricochet") { }
+
+    class spell_iron_juggernaut_ricochet_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_iron_juggernaut_ricochet_SpellScript);
+
+        void HandleHitTarget(SpellEffIndex effIndex)
+        {
+            if (!GetCaster())
+                return;
+
+            if (Creature* pJuggernaut = GetCaster()->ToCreature())
+            {
+                PreventHitDefaultEffect(effIndex);
+
+                Position spawnPos;
+                GetPositionUnderJuggernautClaw(pJuggernaut, spawnPos, true);
+
+                pJuggernaut->SummonCreature(NPC_SAWBLADE_2, spawnPos, TEMPSUMMON_TIMED_DESPAWN, 11 * IN_MILLISECONDS);
+            }
+        }
+
+        void Register()
+        {
+            OnEffectHit += SpellEffectFn(spell_iron_juggernaut_ricochet_SpellScript::HandleHitTarget, EFFECT_0, SPELL_EFFECT_CREATE_AREATRIGGER);
+        }
+    };
+
+    SpellScript* GetSpellScript() const
+    {
+        return new spell_iron_juggernaut_ricochet_SpellScript();
+    }
+};
+
+struct spell_area_iron_juggernaut_borer_drill : AreaTriggerAI
+{
+    spell_area_iron_juggernaut_borer_drill(AreaTrigger* areatrigger) : AreaTriggerAI(areatrigger) { }
+
+    void OnUnitEnter(Unit* unit)
+    {
+        Unit* caster = at->GetCaster();
+        if (!caster)
+            return;
+
+        if (!unit->IsPlayer())
+            return;
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_BORER_DRLL_DMG, DIFFICULTY_NONE);
+
+        caster->AddAura(spellInfo, MAX_EFFECT_MASK, unit);
+    }
+
+    void OnUnitExit(Unit* target)
+    {
+        target->RemoveAura(SPELL_BORER_DRLL_DMG);
+    }
+};
+
+void AddSC_boss_iron_juggernaut()
 {
     new boss_iron_juggernaut();                         // 71466
     new npc_iron_juggernaut_cannons();                  // 71484
@@ -1474,16 +1944,25 @@ void AddSC_iron_juggernaut()
     new npc_iron_juggernaut_crawler_mine();             // 72050
     new npc_iron_juggernaut_cutter_laser();             // 72026
     new npc_iron_juggernaut_explosive_tar();            // 71950
+    new npc_iron_juggernaut_sawblade_ricochet();        // 71945
 
     new spell_iron_juggernaut_borer_drill();            // 144209
     new spell_iron_juggernaut_mortar_blast_force();     // 145407
     new spell_iron_juggernaut_mortar_blast_aoe();       // 144315
+    new spell_iron_juggernaut_mortar_blast_dmg();       // 144316
+    new spell_iron_juggernaut_mortar_blast_siege_force(); // 144555
+    new spell_iron_juggernaut_mortar_blast_siege_periodic(); // 144554
     new spell_iron_juggernaut_scatter_laser_force();    // 144460
+    new spell_iron_juggernaut_scatter_laser_force2();   // 144458
     new spell_iron_juggernaut_crawler_mine_aoe();       // 144673
     new spell_iron_juggernaut_detonation_sequence();    // 144718
     new spell_iron_juggernaut_demolisher_cannons_aoe(); // 144198
+    new spell_iron_juggernaut_demolisher_cannons_dmg(); // 144154
     new spell_iron_juggernaut_cutter_laser_aoe();       // 144573
     new spell_iron_juggernaut_cutter_laser_dmg();       // 144918
     new spell_iron_juggernaut_explosive_tar_periodic(); // 144492
     new spell_iron_juggernaut_explosive_tar_dmg();      // 144498
+    new spell_iron_juggernaut_ricochet();               // 144356
+
+    RegisterAreaTriggerAI(spell_area_iron_juggernaut_borer_drill);       // 144220
 }
