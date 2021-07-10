@@ -118,6 +118,14 @@ enum Misc
     ACTION_BOWMAN_AGGRESSIVE        = 10
 };
 
+enum Effect
+{
+    EFFECT_0,
+    EFFECT_1,
+    EFFECT_2,
+    EFFECT_3,
+}
+
 struct BowmanData
 {
     uint32 entry;
