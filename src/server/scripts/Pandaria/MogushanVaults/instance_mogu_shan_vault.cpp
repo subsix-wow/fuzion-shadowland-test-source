@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 - 2016 MoPCore
+ * Copyright 2021 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -13,42 +13,31 @@
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
- *
- * Raid: Mogu'shan Vaults.
- * Description: Instance Script.
  */
 
-#include "ObjectMgr.h"
 #include "ScriptMgr.h"
 #include "InstanceScript.h"
-#include "ScriptedCreature.h"
-#include "ObjectAccessor.h"
-#include "Group.h"
-#include "Unit.h"
-#include "Player.h"
-#include "Map.h"
-#include "PoolMgr.h"
 #include "VMapFactory.h"
-#include "AccountMgr.h"
-
-#include "mogu_shan_vaults.h"
+#include "mogu_shan_vault.h"
 
 DoorData const doorData[] =
 {
-    {GOB_STONE_GUARD_DOOR_ENTRANCE,          DATA_STONE_GUARD_EVENT,          DOOR_TYPE_ROOM,       BOUNDARY_E   },
-    {GOB_STONE_GUARD_DOOR_EXIT,              DATA_STONE_GUARD_EVENT,          DOOR_TYPE_PASSAGE,    BOUNDARY_W   },
-    {GOB_FENG_DOOR_FENCE,                    DATA_FENG_EVENT,                 DOOR_TYPE_ROOM,       BOUNDARY_NONE},
-    {GOB_FENG_DOOR_EXIT,                     DATA_FENG_EVENT,                 DOOR_TYPE_PASSAGE,    BOUNDARY_N   },
-    {GOB_GARAJAL_FENCE,                      DATA_GARAJAL_EVENT,              DOOR_TYPE_ROOM,       BOUNDARY_NONE},
-    {GOB_GARAJAL_EXIT,                       DATA_GARAJAL_EVENT,              DOOR_TYPE_PASSAGE,    BOUNDARY_W   },
-    {GOB_SPIRIT_KINGS_WIND_WALL,             DATA_SPIRIT_KINGS_EVENT,         DOOR_TYPE_ROOM,       BOUNDARY_NONE},
-    {GOB_SPIRIT_KINGS_EXIT,                  DATA_SPIRIT_KINGS_EVENT,         DOOR_TYPE_PASSAGE,    BOUNDARY_NONE},
-    {GOB_CELESTIAL_DOOR,                     DATA_ELEGON_EVENT,               DOOR_TYPE_ROOM,       BOUNDARY_E   },
-    {GOB_ELEGON_DOOR_ENTRANCE,               DATA_SPIRIT_KINGS_EVENT,         DOOR_TYPE_PASSAGE,    BOUNDARY_NONE},
-    {GOB_ELEGON_CELESTIAL_DOOR,              DATA_ELEGON_EVENT,               DOOR_TYPE_ROOM,       BOUNDARY_E   },
-    {GOB_WILL_OF_EMPEROR_ENTRANCE,           DATA_ELEGON_EVENT,               DOOR_TYPE_PASSAGE,    BOUNDARY_NONE},
-    {0,                                      0,                               DOOR_TYPE_ROOM,       BOUNDARY_NONE},// END
+    {GOB_STONE_GUARD_DOOR_ENTRANCE,          DATA_STONE_GUARD,          DOOR_TYPE_ROOM      },
+    {GOB_STONE_GUARD_DOOR_EXIT,              DATA_STONE_GUARD,          DOOR_TYPE_PASSAGE   },
+    {GOB_FENG_DOOR_FENCE,                    DATA_FENG,                 DOOR_TYPE_ROOM      },
+    {GOB_FENG_DOOR_EXIT,                     DATA_FENG,                 DOOR_TYPE_PASSAGE   },
+    {GOB_GARAJAL_FENCE,                      DATA_GARAJAL,              DOOR_TYPE_ROOM      },
+    {GOB_GARAJAL_EXIT,                       DATA_GARAJAL,              DOOR_TYPE_PASSAGE   },
+    {GOB_SPIRIT_KINGS_WIND_WALL,             DATA_SPIRIT_KINGS,         DOOR_TYPE_ROOM      },
+    {GOB_SPIRIT_KINGS_EXIT,                  DATA_SPIRIT_KINGS,         DOOR_TYPE_PASSAGE   },
+    {GOB_CELESTIAL_DOOR,                     DATA_ELEGON,               DOOR_TYPE_ROOM      },
+    {GOB_ELEGON_DOOR_ENTRANCE,               DATA_SPIRIT_KINGS,         DOOR_TYPE_PASSAGE   },
+    {GOB_ELEGON_CELESTIAL_DOOR,              DATA_ELEGON,               DOOR_TYPE_ROOM      },
+    {GOB_WILL_OF_EMPEROR_ENTRANCE,           DATA_ELEGON,               DOOR_TYPE_PASSAGE   },
 };
+
+#define DIST_BETWEEN_TWO_Z      32.39f
+#define ACHIEVEMENT_SHOWMOVES   6455
 
 Position woeSpawnPos[8] =
 {
@@ -83,27 +72,26 @@ Position woeMiddleSpawnPos[1] =
     {3812.60f, 1536.72f, 367.64f, 0.16f}
 };
 
-#define DIST_BETWEEN_TWO_Z        32.39f
-#define ACHIEVEMENT_SHOWMOVES     6455
-#define MAX_STONE_GUARDS_TURNOVER 3
-
-class instance_mogu_shan_vaults : public InstanceMapScript
+class instance_mogu_shan_vault : public InstanceMapScript
 {
     public:
-        instance_mogu_shan_vaults() : InstanceMapScript("instance_mogu_shan_vaults", 1008) { }
+        instance_mogu_shan_vault() : InstanceMapScript("instance_mogu_shan_vault", 1008) { }
 
-        struct instance_mogu_shan_vaults_InstanceMapScript : public InstanceScript
+        InstanceScript* GetInstanceScript(InstanceMap* map) const
         {
-            instance_mogu_shan_vaults_InstanceMapScript(Map* map) : InstanceScript(map)
-            {
-                Initialize();
-            }
+            return new instance_mogu_shan_vault_InstanceMapScript(map);
+        }
+
+        struct instance_mogu_shan_vault_InstanceMapScript : public InstanceScript
+        {
+            instance_mogu_shan_vault_InstanceMapScript(InstanceMap* map) : InstanceScript(map) {}
 
             uint32 actualPetrifierEntry;
             uint8  guardianCount;
             uint8  guardianAliveCount;
             bool   woeIsGasPhaseActive;
 
+            int8   randomDespawnStoneGuardian;
             uint8  nextWillOfEmperorPhase;
             uint8  willOfEmperirLastBigAddSpawned;
 
@@ -112,58 +100,48 @@ class instance_mogu_shan_vaults : public InstanceMapScript
             uint32 willOfEmperorBossSpawnTimer;
             uint32 willOfEmperorGasPhaseTimer;
 
-            uint64 cursedMogu1Guid;
-            uint64 cursedMogu2Guid;
-            uint64 ghostEssenceGuid;
+            ObjectGuid cursedMogu1Guid;
+            ObjectGuid cursedMogu2Guid;
+            ObjectGuid ghostEssenceGuid;
 
-            uint64 stoneGuardControlerGuid;
-            uint64 fengGuid;
-            uint64 siphonShieldGuid;
-            uint64 spiritKingsControlerGuid;
-            uint64 elegonGuid;
-            uint64 infiniteEnergyGuid;
+            ObjectGuid stoneGuardControlerGuid;
+            ObjectGuid fengGuid;
+            ObjectGuid siphonShieldGuid;
+            ObjectGuid spiritKingsControlerGuid;
+            ObjectGuid elegonGuid;
+            ObjectGuid infiniteEnergyGuid;
 
-            uint64 inversionGobGuid;
-            uint64 stoneGuardExit;
-            uint64 cancelGobGuid;
-            uint64 ancientMoguDoorGuid;
-            uint64 emperorsDoorGuid;
-            uint64 celestialCommandGuid;
-            uint64 ancientControlPanelGuid;
+            ObjectGuid inversionGobGuid;
+            ObjectGuid stoneGuardExit;
+            ObjectGuid cancelGobGuid;
+            ObjectGuid ancientMoguDoorGuid;
+            ObjectGuid emperorsDoorGuid;
+            ObjectGuid celestialCommandGuid;
+            ObjectGuid ancientConsoleGuid;
 
-            uint64 energyPlatformGuid;
-            uint64 titanDiskGuid;
-            uint64 janxiGuid;
-            uint64 qinxiGuid;
+            ObjectGuid energyPlatformGuid;
+            ObjectGuid titanDiskGuid;
+            ObjectGuid janxiGuid;
+            ObjectGuid qinxiGuid;
 
-            std::vector<uint64> stoneGuardGUIDs;
-            std::vector<uint64> fengStatuesGUIDs;
-            std::vector<uint64> spiritKingsGUIDs;
-            std::vector<uint64> titanCirclesGuids;
-            std::vector<uint32> achievementGuids;
+            std::list<uint32>   m_AuraToClear;
 
-            void Initialize()
+            std::vector<ObjectGuid> stoneGuardGUIDs;
+            std::vector<ObjectGuid> fengStatuesGUIDs;
+            std::vector<ObjectGuid> spiritKingsGUIDs;
+            std::vector<ObjectGuid> titanCirclesGuids;
+            std::list<uint32>   achievementGuids;
+
+            void Initialize() override
             {
-                SetBossNumber(MAX_ENCOUNTERS);
+                SetBossNumber(DATA_MAX_BOSS_DATA);
                 LoadDoorData(doorData);
 
                 guardianCount                   = 0;
                 guardianAliveCount              = 0;
-
-                stoneGuardControlerGuid         = 0;
-                fengGuid                        = 0;
-                siphonShieldGuid                = 0;
-
-                inversionGobGuid                = 0;
-                cancelGobGuid                   = 0;
-                ancientMoguDoorGuid             = 0;
-                emperorsDoorGuid                = 0;
-                celestialCommandGuid            = 0;
-                ancientControlPanelGuid         = 0;
-                energyPlatformGuid              = 0;
-                titanDiskGuid                   = 0;
                 woeIsGasPhaseActive             = false;
 
+                randomDespawnStoneGuardian      = urand(1,4);
                 nextWillOfEmperorPhase          = 0;
                 willOfEmperirLastBigAddSpawned  = 0;
 
@@ -173,25 +151,20 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                 willOfEmperorBossSpawnTimer     = 0;
                 willOfEmperorGasPhaseTimer      = 0;
 
-                cursedMogu1Guid                 = 0;
-                cursedMogu2Guid                 = 0;
-                ghostEssenceGuid                = 0;
-
-                stoneGuardControlerGuid         = 0;
-                inversionGobGuid                = 0;
-                cancelGobGuid                   = 0;
-                spiritKingsControlerGuid        = 0;
-
-                qinxiGuid                       = 0;
-                janxiGuid                       = 0;
-
                 stoneGuardGUIDs.clear();
                 fengStatuesGUIDs.clear();
                 spiritKingsGUIDs.clear();
+                achievementGuids.clear();
+
+                m_AuraToClear.clear();
+                m_AuraToClear.push_back(116541); ///< SPELL_TILES_AURA_EFFECT from stone guard
+                m_AuraToClear.push_back(115972); ///< SPELL_INVERSION from Feng
             }
 
-            void OnCreatureCreate(Creature* creature)
+            void OnCreatureCreate(Creature* creature) override
             {
+                InstanceScript::OnCreatureCreate(creature);
+
                 switch (creature->GetEntry())
                 {
                     case NPC_STONE_GUARD_CONTROLER:
@@ -202,25 +175,44 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                     case NPC_AMETHYST:
                     case NPC_COBALT:
                     {
-                        stoneGuardGUIDs.push_back(creature->GetGUID());
-                        guardianAliveCount += 1;
-
-                        uint32 difficulty = instance->GetSpawnMode();
-                        bool turnOver = (difficulty == RAID_DIFFICULTY_10MAN_NORMAL || difficulty == RAID_DIFFICULTY_10MAN_HEROIC || difficulty == RAID_DIFFICULTY_25MAN_LFR);
-
-                        if (guardianAliveCount > MAX_STONE_GUARDS_TURNOVER && GetBossState(DATA_STONE_GUARD_EVENT) != DONE && turnOver)
+                        if (creature->IsAlive())
                         {
-                            std::vector<uint64> stoneGuards;
+                            stoneGuardGUIDs.push_back(creature->GetGUID());
+                            guardianAliveCount++;
+                        }
 
+                        Difficulty difficulty = instance->GetDifficultyID();
+                        bool turnOver = (difficulty == DIFFICULTY_10_N || difficulty == DIFFICULTY_10_HC || difficulty == DIFFICULTY_LFR);
+
+                        // In 10N, 10H or LFR, there are only 3 guardians
+                        if (guardianAliveCount >= 4 && GetBossState(DATA_STONE_GUARD) != DONE && turnOver)
+                        {
+                            uint8 choice;
+                            Creature* guardian = 0;
+                            bool loop = true;
+                            do
+                            {
+                                choice = urand(0, 3);
+                                guardian = instance->GetCreature(stoneGuardGUIDs[choice]);
+                                // Jasper will always remain for loot purpose
+                                if (guardian && guardian->GetEntry() != NPC_JASPER)
+                                    loop = false;
+
+                            } while (loop);
+
+                            uint8 i = 0;
                             for (auto itr : stoneGuardGUIDs)
-                                stoneGuards.push_back(itr);
-
-                            std::random_shuffle(stoneGuards.begin(), stoneGuards.end());
-
-                            if (Creature* stoneGuard = instance->GetCreature((*stoneGuards.begin())))
-                                stoneGuard->DespawnOrUnsummon();
-
-                            guardianAliveCount = MAX_STONE_GUARDS_TURNOVER;
+                            {
+                                if (i == choice)
+                                {
+                                    if (Creature* stoneGuard = instance->GetCreature(itr))
+                                    {
+                                        stoneGuard->DespawnOrUnsummon();
+                                        --guardianAliveCount;
+                                    }
+                                }
+                                ++i;
+                            }
                         }
                         break;
                     }
@@ -243,6 +235,10 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                         spiritKingsControlerGuid = creature->GetGUID();
                         break;
                     case NPC_ZIAN:
+                        // Will be false only if BossState = DONE or NOT_STARTED, as NOT_STARTED = 0, DONE = 0, and max value for BossState = 5
+                        if (GetBossState(DATA_SPIRIT_KINGS) % DONE != NOT_STARTED)
+                            SetBossState(DATA_SPIRIT_KINGS, NOT_STARTED);
+                        // No break here!!!
                     case NPC_MENG:
                     case NPC_QIANG:
                     case NPC_SUBETAI:
@@ -265,8 +261,10 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                 }
             }
 
-            void OnGameObjectCreate(GameObject* go)
+            void OnGameObjectCreate(GameObject* go) override
             {
+                InstanceScript::OnGameObjectCreate(go);
+
                 switch (go->GetEntry())
                 {
                     case GOB_STONE_GUARD_DOOR_ENTRANCE:
@@ -277,6 +275,9 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                     case GOB_SPIRIT_KINGS_WIND_WALL:
                     case GOB_SPIRIT_KINGS_EXIT:
                     case GOB_CELESTIAL_DOOR:
+                        /// Don't allow players to reach second part if it's in LFR mode
+                        if (go->GetEntry() == GOB_GARAJAL_EXIT && instance->IsLFR())
+                            break;
                         AddDoor(go, true);
                         break;
                     // Feng
@@ -308,9 +309,11 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                         go->SetGoState(GO_STATE_ACTIVE);
                         break;
                     case GOB_ELEGON_DOOR_ENTRANCE:
+                        AddDoor(go, true);
                         ancientMoguDoorGuid = go->GetGUID();
                         break;
                     case GOB_WILL_OF_EMPEROR_ENTRANCE:
+                        AddDoor(go, true);
                         emperorsDoorGuid = go->GetGUID();
                         break;
                     case GOB_ENERGY_TITAN_DISK:
@@ -324,23 +327,56 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                         break;
                     case GOB_CELESTIAL_COMMAND:
                         celestialCommandGuid = go->GetGUID();
-                        go->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
                         break;
-                    case GOB_ANCIENT_CONTROL_PANEL:
-                        ancientControlPanelGuid = go->GetGUID();
-                        go->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                    case GOB_ANCIENT_CONTROL_CONSOLE:
+                        ancientConsoleGuid = go->GetGUID();
                         break;
                 }
             }
 
-            bool SetBossState(uint32 id, EncounterState state)
+            void OnGameObjectRemove(GameObject* go) override
+            {
+                InstanceScript::OnGameObjectRemove(go);
+
+                switch (go->GetEntry())
+                {
+                    case GOB_STONE_GUARD_DOOR_ENTRANCE:
+                    case GOB_FENG_DOOR_FENCE:
+                    case GOB_FENG_DOOR_EXIT:
+                    case GOB_GARAJAL_FENCE:
+                    case GOB_GARAJAL_EXIT:
+                    case GOB_SPIRIT_KINGS_WIND_WALL:
+                    case GOB_SPIRIT_KINGS_EXIT:
+                    case GOB_CELESTIAL_DOOR:
+                    case GOB_STONE_GUARD_DOOR_EXIT:
+                    case GOB_ELEGON_DOOR_ENTRANCE:
+                    case GOB_WILL_OF_EMPEROR_ENTRANCE:
+                        AddDoor(go, false);
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            void OnPlayerExit(Player* player) override
+            {
+                InstanceScript::OnPlayerExit(player);
+
+                for (const uint32& l_AuraID : m_AuraToClear)
+                {
+                    if (player->HasAura(l_AuraID))
+                        player->RemoveAurasDueToSpell(l_AuraID);
+                }
+            }
+
+            bool SetBossState(uint32 id, EncounterState state) override
             {
                 if (!InstanceScript::SetBossState(id, state))
                     return false;
 
                 switch (id)
                 {
-                    case DATA_STONE_GUARD_EVENT:
+                    case DATA_STONE_GUARD:
                     {
                         switch (state)
                         {
@@ -366,26 +402,22 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                         }
                         break;
                     }
-                    case DATA_SPIRIT_KINGS_EVENT:
+                    case DATA_SPIRIT_KINGS:
                     {
                         switch (state)
                         {
                             case IN_PROGRESS:
+                            {
                                 if (Creature* spiritKingsControler = instance->GetCreature(spiritKingsControlerGuid))
                                     spiritKingsControler->AI()->DoAction(ACTION_ENTER_COMBAT);
                                 break;
-                            case DONE:
-                                if (GameObject* celestical = instance->GetGameObject(celestialCommandGuid))
-                                    celestical->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
-                                if (GameObject* ancientPanel = instance->GetGameObject(ancientControlPanelGuid))
-                                    ancientPanel->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
-                                break;
+                            }
                             default:
                                 break;
                         }
                         break;
                     }
-                    case DATA_ELEGON_EVENT:
+                    case DATA_ELEGON:
                     {
                         switch (state)
                         {
@@ -422,7 +454,7 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                         }
                         break;
                     }
-                    case DATA_WILL_OF_EMPEROR_EVENT:
+                    case DATA_WILL_OF_EMPEROR:
                     {
                         switch (state)
                         {
@@ -443,6 +475,8 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                                 willOfEmperorGasPhaseTimer      = 210000; // 120 + 90
                                 woeIsGasPhaseActive             = false;
                                 break;
+                            default:
+                                break;
                         }
                     }
                     default:
@@ -452,23 +486,25 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                 return true;
             }
 
-            void SetData(uint32 type, uint32 data)
+            void SetData(uint32 type, uint32 data) override
             {
+                InstanceScript::SetData(type, data);
+
                 if (type == ACHIEVEMENT_SHOWMOVES)
                     SetAchievementValid(ACHIEVEMENT_SHOWMOVES);
 
                 return;
             }
 
-            uint32 GetData(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 if (type == ACHIEVEMENT_SHOWMOVES)
                     return IsAchievementValid(ACHIEVEMENT_SHOWMOVES);
 
-                return 0;
+                return InstanceScript::GetData(type);
             }
 
-            uint64 GetData64(uint32 type)
+            ObjectGuid GetGuidData(uint32 type) const override
             {
                 switch (type)
                 {
@@ -551,16 +587,16 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                         return emperorsDoorGuid;
                     case GOB_CELESTIAL_COMMAND:
                         return celestialCommandGuid;
-                    case GOB_ANCIENT_CONTROL_PANEL:
-                        return ancientControlPanelGuid;
+                    case GOB_ANCIENT_CONTROL_CONSOLE:
+                        return ancientConsoleGuid;
                     default:
                         break;
                 }
 
-                return 0;
+                return InstanceScript::GetGuidData(type);
             }
 
-            bool IsWipe()
+            /*bool IsWipe()
             {
                 Map::PlayerList const& PlayerList = instance->GetPlayers();
 
@@ -569,21 +605,25 @@ class instance_mogu_shan_vaults : public InstanceMapScript
 
                 for (Map::PlayerList::const_iterator Itr = PlayerList.begin(); Itr != PlayerList.end(); ++Itr)
                 {
-                    Player* player = Itr->getSource();
+                    Player* player = Itr->GetSource();
 
                     if (!player)
                         continue;
 
-                    if (player->IsAlive() && !player->isGameMaster() && !player->HasAura(115877)) // Aura 115877 = Totaly Petrified
+                    if (player->IsAlive() && !player->IsGameMaster() && !player->HasAura(115877)) // Aura 115877 = Totaly Petrified
                         return false;
                 }
 
                 return true;
-            }
+            }*/
 
-            void Update(uint32 diff)
+            void Update(uint32 diff) override
             {
-                if (GetBossState(DATA_WILL_OF_EMPEROR_EVENT) != IN_PROGRESS)
+                InstanceScript::Update(diff);
+
+                UpdateOperations(diff);
+
+                if (GetBossState(DATA_WILL_OF_EMPEROR) != IN_PROGRESS)
                     return;
 
                 if (willOfEmperorTimer && !woeIsGasPhaseActive)
@@ -599,7 +639,7 @@ class instance_mogu_shan_vaults : public InstanceMapScript
 
                                 while (randomPos2 == randomPos)
                                     randomPos2 = urand(0, 2);
-                            
+
                                 instance->SummonCreature(NPC_EMPEROR_RAGE, woeRageSpawnPos[randomPos]);
                                 instance->SummonCreature(NPC_EMPEROR_RAGE, woeRageSpawnPos[randomPos2]);
 
@@ -627,7 +667,7 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                             case PHASE_WOE_COURAGE:
                             {
                                 instance->SummonCreature(NPC_EMPEROR_COURAGE, woeSpawnPos[urand(0, 7)]);
-                            
+
                                 nextWillOfEmperorPhase = PHASE_WOE_RAGE;
                                 willOfEmperirLastBigAddSpawned = PHASE_WOE_COURAGE;
                                 willOfEmperorTimer = 10000;
@@ -673,18 +713,18 @@ class instance_mogu_shan_vaults : public InstanceMapScript
                 }
             }
 
-            bool CheckRequiredBosses(uint32 bossId, Player const* player = NULL) const
+            bool CheckRequiredBosses(uint32 bossId, Player const* player = nullptr) const override
             {
                 if (!InstanceScript::CheckRequiredBosses(bossId, player))
                     return false;
 
                 switch (bossId)
                 {
-                    case DATA_WILL_OF_EMPEROR_EVENT:
-                    case DATA_ELEGON_EVENT:
-                    case DATA_SPIRIT_KINGS_EVENT:
-                    case DATA_GARAJAL_EVENT:
-                    case DATA_FENG_EVENT:
+                    case DATA_WILL_OF_EMPEROR:
+                    case DATA_ELEGON:
+                    case DATA_SPIRIT_KINGS:
+                    case DATA_GARAJAL:
+                    case DATA_FENG:
                         if (GetBossState(bossId - 1) != DONE)
                             return false;
                     default:
@@ -696,73 +736,29 @@ class instance_mogu_shan_vaults : public InstanceMapScript
 
             bool IsAchievementValid(uint32 id) const
             {
-                if (achievementGuids[id])
-                    return true;
+                if (achievementGuids.empty())
+                    return false;
+
+                for (std::list<uint32>::const_iterator iter = achievementGuids.begin(); iter != achievementGuids.end(); ++iter)
+                    if ((*iter) == id)
+                        return true;
 
                 return false;
             }
 
             void SetAchievementValid(uint32 id)
             {
-                if (achievementGuids[id])
-                    return;
+                for (std::list<uint32>::const_iterator iter = achievementGuids.begin(); iter != achievementGuids.end(); ++iter)
+                    if ((*iter) == id)
+                        return;
 
                 achievementGuids.push_back(id);
                 return;
             }
-
-            std::string GetSaveData()
-            {
-                OUT_SAVE_INST_DATA;
-
-                std::ostringstream saveStream;
-                saveStream << "M V " << GetBossSaveData();
-
-                OUT_SAVE_INST_DATA_COMPLETE;
-                return saveStream.str();
-            }
-
-            void Load(const char* in)
-            {
-                if (!in)
-                {
-                    OUT_LOAD_INST_DATA_FAIL;
-                    return;
-                }
-
-                OUT_LOAD_INST_DATA(in);
-
-                char dataHead1, dataHead2;
-
-                std::istringstream loadStream(in);
-                loadStream >> dataHead1 >> dataHead2;
-
-                if (dataHead1 == 'M' && dataHead2 == 'V')
-                {
-                    for (uint32 i = 0; i < MAX_ENCOUNTERS; ++i)
-                    {
-                        uint32 tmpState;
-                        loadStream >> tmpState;
-
-                        if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-                            tmpState = NOT_STARTED;
-
-                        SetBossState(i, EncounterState(tmpState));
-                    }
-
-                } else OUT_LOAD_INST_DATA_FAIL;
-
-                OUT_LOAD_INST_DATA_COMPLETE;
-            }
         };
-
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
-        {
-            return new instance_mogu_shan_vaults_InstanceMapScript(map);
-        }
 };
 
-void AddSC_instance_mogu_shan_vaults()
+void AddSC_instance_mogu_shan_vault()
 {
-    new instance_mogu_shan_vaults();
+    new instance_mogu_shan_vault();
 }
