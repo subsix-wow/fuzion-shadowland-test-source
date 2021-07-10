@@ -38,7 +38,8 @@ union u_map_fcc
 //
 struct file_MVER
 {
-    union{
+    union
+    {
         uint32 fcc;
         char   fcc_txt[4];
     };
@@ -51,28 +52,14 @@ struct file_MWMO
     u_map_fcc fcc;
     uint32 size;
     char FileList[1];
-};
-
-struct file_TDB
-{
-    u_map_fcc fcc;
-    uint32 size;
-    char FileList[1];
-};
+}; 
 
 struct file_WMO
 {
     u_map_fcc fcc;
     uint32 size;
     char FileList[1];
-};
-
-struct file_ADT
-{
-    u_map_fcc fcc;
-    uint32 size;
-    char FileList[1];
-};
+}; 
 
 class FileChunk
 {
@@ -102,8 +89,8 @@ public:
     ChunkedFile();
     virtual ~ChunkedFile();
     bool prepareLoadedData();
-    bool loadFile(std::shared_ptr<CASC::Storage const> mpq, std::string const& fileName, bool log = true);
-    bool loadFile(std::shared_ptr<CASC::Storage const> mpq, uint32 fileDataId, std::string const& description, bool log = true);
+    bool loadFile(std::shared_ptr<CASC::Storage const> MWMO, std::string const& fileName, bool log = true);
+    bool loadFile(std::shared_ptr<CASC::Storage const> MWMO, uint32 fileDataId, std::string const& description, bool log = true);
     void free();
 
     void parseChunks();
