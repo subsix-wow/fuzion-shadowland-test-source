@@ -688,9 +688,9 @@ class spell_crystal_shell_aura : public SpellScriptLoader
                 {
                     if (Unit* attacker = dmgInfo.GetAttacker())
                     {
-                        if (AuraPtr crystal = target->GetAura(SPELL_CRYSTAL_SHELL_AURA))
+                        if (AuraPtr CRYSTAL_SHELL_AURA = target->GetAura(SPELL_CRYSTAL_SHELL_AURA))
                         {
-                            if (totalAbsorbAmount <= target->CountPctFromMaxHealth(15 * crystal->GetStackAmount()))
+                            if (totalAbsorbAmount <= target->CountPctFromMaxHealth(15 * CRYSTAL_SHELL_AURA->GetStackAmount()))
                             {
                                 absorbAmount = dmgInfo.GetDamage();
                                 totalAbsorbAmount += dmgInfo.GetDamage();
@@ -711,7 +711,7 @@ class spell_crystal_shell_aura : public SpellScriptLoader
                 if (Unit* target = GetTarget())
                 {
                     if (AuraPtr crystal = target->GetAura(SPELL_CRYSTAL_SHELL_AURA))
-                        if (crystal->GetStackAmount() == 5)
+                        if (CRYSTAL_SHELL_AURA->GetStackAmount() == 5)
                             target->AddAura(SPELL_CRYSTAL_SHELL_CAPPED, target);
                 }
             }
