@@ -86,6 +86,14 @@ enum MiscSpells
     SPELL_GEN_REPLENISHMENT                         = 57669
 };
 
+enum Effect
+{
+    EFFECT_0,
+    EFFECT_1,
+    EFFECT_2,
+    EFFECT_3,
+};
+
 class PowerCheck
 {
     public:
@@ -1363,7 +1371,7 @@ class Spell_pri_mind_control : public SpellScriptLoader
                     SpellCastTargets targets;
                     targets.SetDst(destPos);
                     CastSpellExtraArgs args;
-                    args.TriggerFlags = TRIGGERED_FULL_MASK;
+                    args.TriggerFlags = TriggerFlags();
                     args.CastDifficulty = GetCastDifficulty();
                     GetCaster()->CastSpell(targets, SPELL_PRIEST_MIND_CONTROL, args);
                 }
