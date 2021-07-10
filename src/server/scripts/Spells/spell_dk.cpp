@@ -74,6 +74,14 @@ enum DeathKnightSpells
     SPELL_DK_IMPROVED_BLOOD_PRESENCE            = 50371,50365,63611,
 };
 
+enum Effect
+{
+   EFFECT_0, 
+   EFFECT_1,
+   EFFECT_2,
+   EFFECT_3, 
+};
+
 enum Misc
 {
     NPC_DK_DANCING_RUNE_WEAPON                  = 27893
@@ -92,15 +100,15 @@ class SPELL_DK_IMPROVED_BLOOD_PRESENCE : public SpellScript
             return false;
         for (uint8 i = 0; i < player->CastSpell(IMPROVED_BLOOD_PRESENCE); ++i)
             if (player->CastSpell(i) == 0)
-                return false;
+                return true;
        
         return true;           
     }
     
     void Register() override
     {
-        DoCheckProc += AuraCheckProcFn(spell_dk_improved_blood_presence::CheckProc, EFFECT_1, EFFECT_2, EFFECT_3);
-    }
+        DoCheckProc += AuraCheckProcFn(spell_dk_improved_blood_presence::CheckProc, EFFECT_1, EFFECT_2, EFFECT_3,); 
+    };
 };
 
 // 70656 - Advantage (T10 4P Melee Bonus)
@@ -825,4 +833,4 @@ void AddSC_deathknight_spell_scripts()
     RegisterSpellScript(spell_dk_raise_dead);
     RegisterAuraScript(spell_dk_vampiric_blood);
     RegisterSpellScript(spell_dk_improved_blood_presence);
-}
+};
