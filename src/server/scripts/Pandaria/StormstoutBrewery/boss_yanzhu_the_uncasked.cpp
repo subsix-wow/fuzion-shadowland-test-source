@@ -109,6 +109,14 @@ enum ChenYanzhuYells
     CHEN_SAY_OUTRO_4,                   // I think the brewery might be on fire.
 };
 
+enum Effect
+{
+    EFFECT_0,
+    EFFECT_1,
+    EFFECT_2,
+    EFFECT_3,
+};
+
 enum Spells
 {
     // Boss
@@ -822,7 +830,7 @@ class boss_yan_zhu_the_uncasked : public CreatureScript
             void Reset() { }
 
             void EnterCombat(Unit* /*who*/)
-			{
+            {
                 if (instance)
                     instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me); // Add
 
@@ -905,7 +913,7 @@ class boss_yan_zhu_the_uncasked : public CreatureScript
                 summons.Summon(summon);
                 summon->setActive(true);
 
-		        if (me->isInCombat())
+                if (me->isInCombat())
                     summon->SetInCombatWithZone();
 
                 if (summon->GetEntry() == NPC_FIZZY_BUBBLE)
@@ -979,7 +987,7 @@ class boss_yan_zhu_the_uncasked : public CreatureScript
                             me->AddAura(SPELL_ROOT, me);
                             SpawnInCircle(1.0f, 8, NPC_BUBBLE_SHIELD, TEMPSUMMON_MANUAL_DESPAWN);
                             if (AuraPtr aura = me->GetAura(SPELL_BUBBLE_SHIELD))
-					            me->SetAuraStack(SPELL_BUBBLE_SHIELD, me, 8);
+                                me->SetAuraStack(SPELL_BUBBLE_SHIELD, me, 8);
                             break;
                         case EVENT_YEASTY_BREW_ELEMENTALS:
                             for (uint8 i = 0; i < 4; i++)
@@ -1069,7 +1077,7 @@ class boss_yan_zhu_the_uncasked : public CreatureScript
                         SudsMove(sudsBottom, SudsMovePositions[1].GetPositionX(), SudsMovePositions[1].GetPositionY(), SudsMovePositions[1].GetPositionZ());
                         SudsMove(sudsRight, SudsMovePositions[0].GetPositionX(), SudsMovePositions[0].GetPositionY(), SudsMovePositions[0].GetPositionZ());
                     }
-				}
+                }
                 else                  // Top->Bottom.
                 {
                     // Need Top and Right.
@@ -1079,8 +1087,8 @@ class boss_yan_zhu_the_uncasked : public CreatureScript
                         SudsMove(sudsTop, SudsMovePositions[0].GetPositionX(), SudsMovePositions[0].GetPositionY(), SudsMovePositions[0].GetPositionZ());
                         SudsMove(sudsRight, SudsMovePositions[0].GetPositionX(), SudsMovePositions[0].GetPositionY(), SudsMovePositions[0].GetPositionZ());
                     }
-				}
-			}
+                }
+            }
             else       // Left->Right.
             {
                 if (urand(0, 1) == 0) // Bottom->Top.
@@ -1103,7 +1111,7 @@ class boss_yan_zhu_the_uncasked : public CreatureScript
                         SudsMove(sudsLeft, SudsMovePositions[1].GetPositionX(), SudsMovePositions[1].GetPositionY(), SudsMovePositions[1].GetPositionZ());
                     }
                 }
-			}
+            }
 
             // Add Sudsy aura to players.
             DoCast(me, SPELL_SUDSY);
@@ -1439,7 +1447,7 @@ class spell_yeasty_alemental_ferment : public SpellScriptLoader
 
                 if (Unit* caster = GetCaster())
                 {
-	                if (Creature* Yanzhu = caster->FindNearestCreature(BOSS_YANZHU_THE_UNCASKED, 100.0f, true))
+                    if (Creature* Yanzhu = caster->FindNearestCreature(BOSS_YANZHU_THE_UNCASKED, 100.0f, true))
                     {
                         std::list<Player*> playerTargetsList;
                         Map::PlayerList const &PlayerList = caster->GetMap()->GetPlayers();
@@ -1517,17 +1525,17 @@ class spell_yanzhu_carbonation_damage : public SpellScriptLoader
                 if (!GetCaster() || targets.empty())
                     return;
 
-				Map* map = GetCaster()->GetMap();
-				if (map && map->IsDungeon())
-				{
-					targets.clear();
-					std::list<Player*> playerList;
-					Map::PlayerList const& players = map->GetPlayers();
-					for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
-						if (Player* player = itr->getSource())
-							if (!(player->HasAura(SPELL_FIZZY_BUBBLE) && player->GetPositionZ() > GetCaster()->GetPositionZ() + 1.5f))
-								targets.push_back(player);
-				}
+                Map* map = GetCaster()->GetMap();
+                if (map && map->IsDungeon())
+                {
+                    targets.clear();
+                    std::list<Player*> playerList;
+                    Map::PlayerList const& players = map->GetPlayers();
+                    for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                        if (Player* player = itr->getSource())
+                            if (!(player->HasAura(SPELL_FIZZY_BUBBLE) && player->GetPositionZ() > GetCaster()->GetPositionZ() + 1.5f))
+                                targets.push_back(player);
+                }
             }
 
             void Register()
@@ -1611,7 +1619,7 @@ class spell_yanzhu_sudsy : public SpellScriptLoader
                 {
                     target->CastSpell(target, SPELL_SUDSY_JUMP, true);
                     jumpedHigh = true;
-			    }
+                }
 
                 if (!target->HasUnitMovementFlag(MOVEMENTFLAG_FALLING) && target->IsMoving() && jumpedHigh)
                     jumpedHigh = false;
