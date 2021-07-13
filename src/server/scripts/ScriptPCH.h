@@ -36,7 +36,7 @@
 #include "CreatureAI.h"
 #include "GameObject.h"
 #include "GameEventMgr.h"
-#include "ScriptedAI.h"
+//#include "ScriptedAI.h"
 #include "ScriptedPetAI.h"
 #include "ScriptedGameObject.h"
 #include "ScriptedFollowerAI.h"
